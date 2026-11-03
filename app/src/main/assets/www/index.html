@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#080c11">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ไมล์ GPS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap">
+<style>
+/* Layout: one big gauge on top, trip stats and settings below; two columns in landscape.
+   Color is functional: teal = under limit, amber = near limit, red = over limit. */
+:root {
+  --bg: #edf0f4;
+  --panel: #ffffff;
+  --ink: #0c141d;
+  --muted: #586573;
+  --line: #d5dbe3;
+  --track: #d9dfe7;
+  --ok: #087a69;
+  --warn: #b45f00;
+  --over: #d3212b;
+  --on-ok: #ffffff;
+  --on-over: #ffffff;
+  --display: "Chakra Petch", "Noto Sans Thai", system-ui, sans-serif;
+  --body: "Noto Sans Thai", "Sarabun", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #080c11; --panel: #111821; --ink: #edf3f9; --muted: #8a98a8;
+    --line: #1f2a36; --track: #1b2530; --ok: #25d3b5; --warn: #ffb224; --over: #ff5560;
+    --on-ok: #04120f; --on-over: #200508; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #080c11; --panel: #111821; --ink: #edf3f9; --muted: #8a98a8;
+  --line: #1f2a36; --track: #1b2530; --ok: #25d3b5; --warn: #ffb224; --over: #ff5560;
+  --on-ok: #04120f; --on-over: #200508; color-scheme: dark;
+}
+/* HUD mode: pure black so the reflection on a windshield or visor stays clean.
+   Doubled class raises specificity above the theme blocks. */
+:root.hud.hud {
+  --bg: #000; --panel: #000; --ink: #ffffff; --muted: #9aa7b4;
+  --line: #1b232c; --track: #18202a; --ok: #25d3b5; --warn: #ffb224; --over: #ff5560;
+  --on-ok: #04120f; --on-over: #200508; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  --zone: var(--ok);
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.5;
+  padding-block: max(12px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-bottom, 0px));
+  padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+body[data-zone="warn"] { --zone: var(--warn); }
+body[data-zone="over"] { --zone: var(--over); }
+[hidden] { display: none !important; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--ok); outline-offset: 2px; }
+
+.app { max-width: 1040px; margin: 0 auto; display: grid; gap: 14px; }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.top h1 { margin: 0; font: 700 1.25rem/1.2 var(--display); }
+.gps { display: flex; align-items: center; gap: 8px; color: var(--muted); font: 500 0.85rem/1 var(--display); }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; }
+.bars i { width: 4px; border-radius: 1px; background: var(--track); }
+.bars i:nth-child(1) { height: 5px; }
+.bars i:nth-child(2) { height: 8px; }
+.bars i:nth-child(3) { height: 12px; }
+.bars i:nth-child(4) { height: 16px; }
+.bars i.on { background: var(--ok); }
+.bars.lv1 i.on { background: var(--over); }
+.bars.lv2 i.on { background: var(--warn); }
+
+.layout { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 760px) and (orientation: landscape) {
+  .layout { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
+}
+
+.dash { display: grid; gap: 8px; justify-items: center; }
+.gauge {
+  position: relative;
+  container-type: inline-size;
+  width: min(100%, 460px, calc((100vh - 140px) * 320 / 280));
+  aspect-ratio: 320 / 280;
+}
+.gauge svg { display: block; width: 100%; height: 100%; }
+.track { fill: none; stroke: var(--track); stroke-width: 16; stroke-linecap: round; }
+.prog { fill: none; stroke: var(--zone); stroke-width: 16; stroke-linecap: round; transition: stroke 0.2s; }
+.tick { stroke: var(--muted); stroke-width: 2; }
+.tick.minor { stroke-width: 1; opacity: 0.55; }
+.tlabel { fill: var(--muted); font: 600 12px var(--display); text-anchor: middle; dominant-baseline: central; }
+.limit-mark { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
+
+.readout {
+  position: absolute; left: 50%; top: 57%;
+  transform: translate(-50%, -50%);
+  display: grid; justify-items: center; gap: 0;
+  text-align: center;
+}
+.speed {
+  font-family: var(--display); font-weight: 700;
+  font-size: clamp(3.5rem, 20vw, 7rem);
+  font-size: 22cqw;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  min-width: 2ch;
+}
+.unit { font: 500 0.95rem/1.3 var(--body); color: var(--muted); margin-top: 2px; }
+.limit-chip {
+  margin-top: 8px; padding: 2px 12px; border-radius: 999px;
+  border: 1px solid var(--line);
+  font: 600 0.85rem/1.6 var(--display); color: var(--ink);
+}
+body[data-zone="over"] .speed { color: var(--over); }
+body[data-zone="over"] .limit-chip { border-color: var(--over); color: var(--over); }
+@media (prefers-reduced-motion: no-preference) {
+  body[data-zone="over"] .speed { animation: pulse 0.5s ease-in-out infinite alternate; }
+}
+@keyframes pulse { from { opacity: 1; } to { opacity: 0.55; } }
+
+.flash {
+  position: fixed; inset: 0; pointer-events: none; z-index: 5;
+  border: 6px solid var(--over); opacity: 0; transition: opacity 0.15s;
+}
+body[data-zone="over"] .flash { opacity: 1; }
+
+.status { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.9rem; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.status[data-kind="search"] .dot { background: var(--warn); }
+.status[data-kind="live"] .dot { background: var(--ok); }
+.status[data-kind="err"] .dot { background: var(--over); }
+
+.panel { display: grid; gap: 12px; min-width: 0; }
+.stats { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.stat {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 12px 14px; display: grid; gap: 2px; min-width: 0;
+}
+.stat dt { color: var(--muted); font-size: 0.8rem; line-height: 1.35; }
+.stat dd { margin: 0; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.stat .val { font: 600 1.9rem/1.15 var(--display); font-variant-numeric: tabular-nums; }
+.stat small { color: var(--muted); font-size: 0.8rem; }
+
+.actions { display: grid; grid-template-columns: 1.6fr 1fr; gap: 10px; }
+.btn {
+  min-height: 56px; border-radius: 14px; border: 1px solid transparent;
+  font: 700 1.1rem/1.2 var(--display); cursor: pointer; padding: 0 16px;
+}
+.btn.primary { background: var(--ok); color: var(--on-ok); }
+.btn.primary[data-state="running"] { background: var(--over); color: var(--on-over); }
+.btn.ghost { background: var(--panel); border-color: var(--line); color: var(--ink); }
+.btn:active { transform: translateY(1px); }
+
+.notice {
+  margin: 0; padding: 12px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.5;
+  background: var(--panel); border: 1px solid var(--line);
+}
+.notice[data-kind="err"] { border-color: var(--over); }
+.notice[data-kind="warn"] { border-color: var(--warn); }
+
+.settings { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 2px 14px; }
+.row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 0; border-top: 1px solid var(--line); min-height: 56px;
+}
+.row:first-child { border-top: 0; }
+.name { display: grid; gap: 0; min-width: 0; }
+.name small { color: var(--muted); font-size: 0.78rem; line-height: 1.35; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper button {
+  width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--bg); font: 700 1.4rem/1 var(--display); cursor: pointer;
+}
+.stepper output { min-width: 2.4ch; text-align: center; font: 700 1.4rem/1 var(--display); font-variant-numeric: tabular-nums; }
+.stepper span { color: var(--muted); font-size: 0.8rem; }
+
+.sw {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0;
+  width: 52px; height: 32px; border-radius: 16px; position: relative; cursor: pointer;
+  background: var(--track); border: 1px solid var(--line); transition: background 0.15s;
+}
+.sw::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s;
+}
+.sw:checked { background: var(--ok); border-color: var(--ok); }
+.sw:checked::after { transform: translateX(20px); }
+.sw:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.safety { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.55; }
+
+.hud .dash { transform: scaleX(-1); }
+</style>
+</head>
+<body>
+<div class="flash" aria-hidden="true"></div>
+<div class="app">
+  <header class="top">
+    <h1>ไมล์ GPS</h1>
+    <div class="gps" title="ความแม่นยำของสัญญาณ GPS">
+      <span class="bars" id="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span id="gpsText">GPS</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="dash" aria-label="ความเร็วปัจจุบัน">
+      <div class="gauge">
+        <svg viewBox="0 0 320 280" role="img" aria-label="มาตรวัดความเร็ว 0 ถึง 160 กิโลเมตรต่อชั่วโมง">
+          <path id="track" class="track" d=""/>
+          <path id="prog" class="prog" d=""/>
+          <g id="ticks"></g>
+          <line id="limitMark" class="limit-mark" x1="0" y1="0" x2="0" y2="0"/>
+        </svg>
+        <div class="readout">
+          <div class="speed" id="speed">--</div>
+          <div class="unit">กม./ชม.</div>
+          <div class="limit-chip" id="limitChip">ลิมิต 80</div>
+        </div>
+      </div>
+      <p class="status" id="status" data-kind="idle" role="status">
+        <span class="dot"></span><span id="statusText">พร้อมใช้งาน กดเริ่มจับ GPS</span>
+      </p>
+    </section>
+
+    <section class="panel">
+      <dl class="stats">
+        <div class="stat"><dt>ความเร็วสูงสุด</dt><dd><span class="val" id="max">0</span><small>กม./ชม.</small></dd></div>
+        <div class="stat"><dt>ความเร็วเฉลี่ย (ไม่นับตอนจอด)</dt><dd><span class="val" id="avg">0</span><small>กม./ชม.</small></dd></div>
+        <div class="stat"><dt>ระยะทาง</dt><dd><span class="val" id="dist">0.00</span><small>กม.</small></dd></div>
+        <div class="stat"><dt>เวลาเดินทาง</dt><dd><span class="val" id="time">0:00:00</span></dd></div>
+      </dl>
+
+      <div class="actions">
+        <button class="btn primary" id="startBtn" type="button">เริ่มจับ GPS</button>
+        <button class="btn ghost" id="resetBtn" type="button">รีเซ็ตทริป</button>
+      </div>
+
+      <p class="notice" id="notice" role="alert" hidden></p>
+
+      <div class="settings">
+        <div class="row">
+          <span class="name">จำกัดความเร็ว</span>
+          <div class="stepper">
+            <button id="limitDown" type="button" aria-label="ลดลิมิตลง 5">−</button>
+            <output id="limitVal">80</output>
+            <span>กม./ชม.</span>
+            <button id="limitUp" type="button" aria-label="เพิ่มลิมิตขึ้น 5">+</button>
+          </div>
+        </div>
+        <label class="row" for="tSound">
+          <span class="name">เตือนด้วยเสียง</span>
+          <input class="sw" id="tSound" type="checkbox" role="switch">
+        </label>
+        <label class="row" for="tVibrate">
+          <span class="name">เตือนด้วยการสั่น<small>ใช้ได้เฉพาะมือถือ Android</small></span>
+          <input class="sw" id="tVibrate" type="checkbox" role="switch">
+        </label>
+        <label class="row" for="tHud">
+          <span class="name">ภาพสะท้อนกระจก (HUD)<small>กลับด้านซ้าย-ขวา วางมือถือหงายหน้าจอใต้กระจกหน้า</small></span>
+          <input class="sw" id="tHud" type="checkbox" role="switch">
+        </label>
+        <label class="row" for="tDay">
+          <span class="name">โหมดกลางวัน<small>พื้นหน้าจอสว่าง อ่านง่ายเวลาแดดจัด</small></span>
+          <input class="sw" id="tDay" type="checkbox" role="switch">
+        </label>
+        <label class="row" for="tSim">
+          <span class="name">โหมดจำลอง<small>ทดสอบหน้าตาแอปในบ้าน ไม่ใช้ GPS</small></span>
+          <input class="sw" id="tSim" type="checkbox" role="switch">
+        </label>
+      </div>
+
+      <p class="safety">ตั้งมือถือให้นิ่งก่อนออกตัว และไม่ควรมองหน้าจอขณะขับขี่ ความเร็วจาก GPS อาจต่างจากเข็มไมล์ของรถเล็กน้อย และต้องใช้เวลาไม่กี่วินาทีหลังเริ่มให้สัญญาณนิ่ง</p>
+    </section>
+  </main>
+</div>
+<noscript>ต้องเปิดใช้งาน JavaScript เพื่อใช้แอปนี้</noscript>
+
+<script>
+(function () {
+  'use strict';
+
+  // ==ENGINE-START==
+  const VMAX = 160;
+  const MOVE_KMH = 3;
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371000, r = Math.PI / 180;
+    const dLa = (lat2 - lat1) * r, dLo = (lon2 - lon1) * r;
+    const s = Math.sin(dLa / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLo / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+  }
+
+  function createTrip() {
+    return { dist: 0, moving: 0, max: 0, disp: 0, last: null, hist: [], fixes: 0 };
+  }
+
+  // keep the last ~5 s of fixes: a longer baseline averages out GPS jitter when there is no Doppler speed
+  function remember(t, f) {
+    t.last = f;
+    t.hist.push(f);
+    while (t.hist.length && f.t - t.hist[0].t > 5000) t.hist.shift();
+  }
+
+  function avgKmh(t) {
+    return t.moving > 0 ? (t.dist / 1000) / (t.moving / 3600) : 0;
+  }
+
+  // f = { lat, lon, acc (m), speed (m/s or null), t (ms) }. Returns true when the fix was used.
+  function processFix(t, f) {
+    if (!(f.acc <= 100)) return false;                      // too inaccurate, ignore
+    if (t.last && f.t - t.last.t > 15000) { t.last = null; t.hist = []; }  // long gap: new segment
+    if (t.last && f.t <= t.last.t) return false;            // out of order
+    const prev = t.last;
+    const dt = prev ? (f.t - prev.t) / 1000 : 0;
+    const d = prev ? haversine(prev.lat, prev.lon, f.lat, f.lon) : 0;
+    const hasSpeed = f.speed != null && isFinite(f.speed) && f.speed >= 0;
+
+    let raw;
+    if (hasSpeed) {
+      raw = f.speed * 3.6;
+    } else if (prev && dt >= 0.5) {
+      // movement smaller than the GPS noise counts as standing still
+      const base = t.hist.length ? t.hist[0] : prev;
+      const bdt = (f.t - base.t) / 1000;
+      const bd = haversine(base.lat, base.lon, f.lat, f.lon);
+      raw = bd < Math.max(3, f.acc * 0.8) ? 0 : (bd / bdt) * 3.6;
+    } else {
+      remember(t, f);
+      return false;
+    }
+    if (raw > 250) return false;                            // implausible spike
+    if (raw < 2) raw = 0;
+
+    t.disp = (raw === 0 && t.disp < 3) ? 0 : t.disp + (raw - t.disp) * (raw === 0 ? 0.7 : 0.55);
+
+    if (prev && raw >= MOVE_KMH && f.acc <= 30) {
+      t.moving += dt;
+      t.dist += hasSpeed ? (raw / 3.6) * dt : d;
+    }
+    if (f.acc <= 30 && t.fixes >= 2 && t.disp > t.max) t.max = t.disp;
+    t.fixes++;
+    remember(t, f);
+    return true;
+  }
+
+  function fmtTime(sec) {
+    const s = Math.max(0, Math.floor(sec));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return h + ':' + String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0');
+  }
+
+  function signalLevel(acc) {
+    if (acc <= 10) return { bars: 4, label: 'ดีมาก' };
+    if (acc <= 20) return { bars: 3, label: 'ดี' };
+    if (acc <= 40) return { bars: 2, label: 'พอใช้' };
+    return { bars: 1, label: 'อ่อน' };
+  }
+  // ==ENGINE-END==
+
+  // ---------- gauge geometry (one scale for arc, ticks, labels and limit mark) ----------
+  const CX = 160, CY = 160, R = 128, A0 = 135, SWEEP = 270;
+  const ang = v => A0 + SWEEP * Math.min(Math.max(v, 0), VMAX) / VMAX;
+  const pt = (a, r) => [CX + r * Math.cos(a * Math.PI / 180), CY + r * Math.sin(a * Math.PI / 180)];
+  function arcPath(a1, a2, r) {
+    const p1 = pt(a1, r), p2 = pt(a2, r);
+    const large = (a2 - a1) > 180 ? 1 : 0;
+    return 'M' + p1[0].toFixed(2) + ' ' + p1[1].toFixed(2) +
+      ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + p2[0].toFixed(2) + ' ' + p2[1].toFixed(2);
+  }
+
+  const $ = id => document.getElementById(id);
+  const el = {
+    speed: $('speed'), prog: $('prog'), track: $('track'), ticks: $('ticks'),
+    limitMark: $('limitMark'), limitChip: $('limitChip'), limitVal: $('limitVal'),
+    status: $('status'), statusText: $('statusText'), notice: $('notice'),
+    max: $('max'), avg: $('avg'), dist: $('dist'), time: $('time'),
+    start: $('startBtn'), reset: $('resetBtn'), bars: $('bars'), gpsText: $('gpsText'),
+    limitDown: $('limitDown'), limitUp: $('limitUp'),
+    tSound: $('tSound'), tVibrate: $('tVibrate'), tHud: $('tHud'), tDay: $('tDay'), tSim: $('tSim')
+  };
+
+  // ---------- preferences ----------
+  const PREF_KEY = 'moto-gps-prefs-v1';
+  const prefs = { limit: 80, sound: true, vibrate: true, hud: false, theme: null };
+  try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); } catch (e) { /* ignore */ }
+  function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
+
+  // ---------- run state ----------
+  let trip = createTrip();
+  let running = false, hasFix = false, watchId = null, simTimer = null;
+  let elapsed = 0, tickAt = 0, lastBeep = 0, audioCtx = null, wakeLock = null, noticeKind = null;
+
+  function drawStatic() {
+    el.track.setAttribute('d', arcPath(A0, A0 + SWEEP, R));
+    const NS = 'http://www.w3.org/2000/svg';
+    for (let v = 0; v <= VMAX; v += 10) {
+      const major = v % 20 === 0;
+      const a = ang(v);
+      const p1 = pt(a, R - 14), p2 = pt(a, R - (major ? 26 : 21));
+      const ln = document.createElementNS(NS, 'line');
+      ln.setAttribute('class', major ? 'tick' : 'tick minor');
+      ln.setAttribute('x1', p1[0].toFixed(2)); ln.setAttribute('y1', p1[1].toFixed(2));
+      ln.setAttribute('x2', p2[0].toFixed(2)); ln.setAttribute('y2', p2[1].toFixed(2));
+      el.ticks.appendChild(ln);
+      if (major) {
+        const pl = pt(a, R - 42);
+        const tx = document.createElementNS(NS, 'text');
+        tx.setAttribute('class', 'tlabel');
+        tx.setAttribute('x', pl[0].toFixed(2)); tx.setAttribute('y', pl[1].toFixed(2));
+        tx.textContent = String(v);
+        el.ticks.appendChild(tx);
+      }
+    }
+  }
+
+  function applyLimit() {
+    const a = ang(prefs.limit);
+    const p1 = pt(a, R - 14), p2 = pt(a, R + 13);
+    el.limitMark.setAttribute('x1', p1[0].toFixed(2)); el.limitMark.setAttribute('y1', p1[1].toFixed(2));
+    el.limitMark.setAttribute('x2', p2[0].toFixed(2)); el.limitMark.setAttribute('y2', p2[1].toFixed(2));
+    el.limitVal.textContent = String(prefs.limit);
+    el.limitChip.textContent = 'ลิมิต ' + prefs.limit;
+  }
+
+  function zoneOf(shown) {
+    return shown > prefs.limit ? 'over' : (shown >= prefs.limit * 0.9 ? 'warn' : 'ok');
+  }
+
+  // ---------- alerts ----------
+  function beep() {
+    if (!prefs.sound || !audioCtx) return;
+    try {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime;
+      o.type = 'square'; o.frequency.value = 880;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t); o.stop(t + 0.4);
+    } catch (e) { /* ignore */ }
+  }
+  function alerts(zone) {
+    if (zone !== 'over' || !running) { lastBeep = 0; return; }
+    const now = Date.now();
+    if (now - lastBeep >= 2500) {
+      lastBeep = now;
+      beep();
+      if (prefs.vibrate && navigator.vibrate) { try { navigator.vibrate([180, 90, 180]); } catch (e) { /* ignore */ } }
+    }
+  }
+
+  // ---------- rendering ----------
+  function render() {
+    const v = trip.disp;
+    const shown = Math.round(v);
+    el.speed.textContent = hasFix ? String(shown) : '--';
+    el.prog.setAttribute('d', hasFix && v > 0.5 ? arcPath(A0, ang(v), R) : '');
+    const zone = hasFix ? zoneOf(shown) : 'ok';
+    document.body.dataset.zone = zone;
+    el.max.textContent = String(Math.round(trip.max));
+    el.avg.textContent = String(Math.round(avgKmh(trip)));
+    const km = trip.dist / 1000;
+    el.dist.textContent = km < 10 ? km.toFixed(2) : km.toFixed(1);
+    el.time.textContent = fmtTime(elapsed);
+    alerts(zone);
+  }
+
+  function setStatus(kind, text) {
+    el.status.dataset.kind = kind;
+    el.statusText.textContent = text;
+  }
+  function updateUI() {
+    el.start.dataset.state = running ? 'running' : 'idle';
+    el.start.textContent = running ? 'หยุด' : ((trip.fixes > 0 || elapsed > 0) ? 'เริ่มต่อ' : 'เริ่มจับ GPS');
+    el.tSim.disabled = running;
+    if (running && !hasFix) setStatus('search', el.tSim.checked ? 'โหมดจำลอง กำลังเริ่ม…' : 'กำลังค้นหาสัญญาณ GPS…');
+    else if (running) setStatus('live', el.tSim.checked ? 'กำลังบันทึกทริป (โหมดจำลอง)' : 'กำลังบันทึกทริป');
+    else if (trip.fixes > 0 || elapsed > 0) setStatus('idle', 'หยุดชั่วคราว กดเริ่มต่อได้');
+    else setStatus('idle', 'พร้อมใช้งาน กดเริ่มจับ GPS');
+  }
+  function showNotice(kind, text) {
+    noticeKind = kind;
+    el.notice.dataset.kind = kind;
+    el.notice.textContent = text;
+    el.notice.hidden = false;
+  }
+  function hideNotice() { noticeKind = null; el.notice.hidden = true; }
+
+  function setSignal(acc) {
+    const s = signalLevel(acc);
+    el.bars.className = 'bars lv' + s.bars;
+    Array.prototype.forEach.call(el.bars.children, (b, i) => b.classList.toggle('on', i < s.bars));
+    el.gpsText.textContent = '±' + Math.round(acc) + ' ม. ' + s.label;
+  }
+
+  // ---------- GPS input ----------
+  function handleFix(f) {
+    setSignal(f.acc);
+    if (f.acc <= 100) {
+      if (!hasFix) { hasFix = true; updateUI(); }
+      if (noticeKind === 'warn') hideNotice();
+    } else if (noticeKind !== 'warn') {
+      showNotice('warn', 'สัญญาณ GPS ยังไม่แม่นพอ (คลาดเคลื่อนเกิน 100 เมตร) ลองออกไปที่โล่ง');
+    }
+    processFix(trip, f);
+    render();
+  }
+  function onPos(p) {
+    handleFix({
+      lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy,
+      speed: p.coords.speed, t: p.timestamp
+    });
+  }
+  function onErr(e) {
+    if (e.code === 1) {
+      stop();
+      showNotice('err', 'ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง เปิดสิทธิ์ตำแหน่ง (Location) ให้เบราว์เซอร์และเว็บไซต์นี้ในการตั้งค่า แล้วกดเริ่มอีกครั้ง ถ้าเปิดไฟล์จากในเครื่องโดยตรง ให้โฮสต์ไฟล์ผ่านลิงก์ https ก่อน');
+    } else if (e.code === 2) {
+      showNotice('warn', 'ยังไม่พบสัญญาณ GPS ลองออกไปที่โล่ง และเปิดตำแหน่งแบบความแม่นยำสูงในการตั้งค่าเครื่อง');
+    } else {
+      showNotice('warn', 'รอสัญญาณ GPS นานกว่าปกติ กำลังลองต่อ');
+    }
+  }
+
+  function startSim() {
+    let k = 0, lat = 13.7563, lon = 100.5018;
+    const heading = 20 * Math.PI / 180;
+    function step() {
+      k++;
+      const kmh = Math.max(0, 55 + 62 * Math.sin(k / 10 - 1.5));
+      const d = kmh / 3.6;
+      lat += d * Math.cos(heading) / 111320;
+      lon += d * Math.sin(heading) / (111320 * Math.cos(lat * Math.PI / 180));
+      handleFix({ lat: lat, lon: lon, acc: 6 + Math.random() * 4, speed: kmh / 3.6, t: Date.now() });
+    }
+    step();
+    simTimer = setInterval(step, 1000);
+  }
+
+  async function requestWake() {
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* ignore */ }
+  }
+  function releaseWake() {
+    try { if (wakeLock) wakeLock.release(); } catch (e) { /* ignore */ }
+    wakeLock = null;
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (running && document.visibilityState === 'visible') requestWake();
+  });
+
+  function start() {
+    if (running) return;
+    const sim = el.tSim.checked;
+    if (!sim) {
+      if (!('geolocation' in navigator)) { showNotice('err', 'เบราว์เซอร์นี้ไม่รองรับ GPS'); return; }
+      if (!window.isSecureContext) {
+        showNotice('err', 'เบราว์เซอร์อนุญาตให้ใช้ตำแหน่งเฉพาะหน้าที่เปิดผ่านลิงก์ https เท่านั้น ให้โฮสต์ไฟล์นี้แล้วเปิดจากลิงก์ https');
+        return;
+      }
+    }
+    hideNotice();
+    running = true; hasFix = false; trip.last = null; trip.hist = [];
+    tickAt = performance.now();
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC && !audioCtx) audioCtx = new AC();
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { /* ignore */ }
+    requestWake();
+    if (sim) startSim();
+    else watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+    updateUI();
+    render();
+  }
+
+  function stop() {
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    if (simTimer !== null) { clearInterval(simTimer); simTimer = null; }
+    running = false; hasFix = false;
+    trip.disp = 0; trip.last = null; trip.hist = [];
+    releaseWake();
+    updateUI();
+    render();
+  }
+
+  function resetTrip() {
+    trip = createTrip();
+    elapsed = 0; tickAt = performance.now();
+    if (!running) hasFix = false;
+    updateUI();
+    render();
+  }
+
+  setInterval(() => {
+    if (!running) return;
+    const now = performance.now();
+    elapsed += (now - tickAt) / 1000;
+    tickAt = now;
+    el.time.textContent = fmtTime(elapsed);
+  }, 500);
+
+  // ---------- controls ----------
+  el.start.addEventListener('click', () => { running ? stop() : start(); });
+  el.reset.addEventListener('click', resetTrip);
+  el.limitDown.addEventListener('click', () => { prefs.limit = Math.max(20, prefs.limit - 5); savePrefs(); applyLimit(); render(); });
+  el.limitUp.addEventListener('click', () => { prefs.limit = Math.min(140, prefs.limit + 5); savePrefs(); applyLimit(); render(); });
+  el.tSound.addEventListener('change', () => { prefs.sound = el.tSound.checked; savePrefs(); if (prefs.sound) beep(); });
+  el.tVibrate.addEventListener('change', () => { prefs.vibrate = el.tVibrate.checked; savePrefs(); });
+  el.tHud.addEventListener('change', () => {
+    prefs.hud = el.tHud.checked; savePrefs();
+    document.documentElement.classList.toggle('hud', prefs.hud);
+  });
+  el.tDay.addEventListener('change', () => {
+    prefs.theme = el.tDay.checked ? 'light' : 'dark'; savePrefs();
+    document.documentElement.setAttribute('data-theme', prefs.theme);
+  });
+
+  // ---------- init ----------
+  drawStatic();
+  applyLimit();
+  el.tSound.checked = !!prefs.sound;
+  el.tVibrate.checked = !!prefs.vibrate;
+  el.tHud.checked = !!prefs.hud;
+  document.documentElement.classList.toggle('hud', !!prefs.hud);
+  if (prefs.theme === 'light' || prefs.theme === 'dark') document.documentElement.setAttribute('data-theme', prefs.theme);
+  el.tDay.checked = prefs.theme
+    ? prefs.theme === 'light'
+    : !(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  updateUI();
+  render();
+})();
+</script>
+</body>
+</html>
