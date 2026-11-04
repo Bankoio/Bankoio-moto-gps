@@ -9,38 +9,37 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>ไมล์ GPS</title>
 <style>
-/* Look: pure black screen, one big red arc gauge (0-240), big white number, trip distance and flag in the
-   gauge opening, average / max at the bottom. Fonts are the system fonts so it works offline.
-   Dark is the default; "โหมดกลางวัน" switches to a light background. */
+/* Look: pure black screen, one big thick-band arc gauge (0-240). The band is bright red at the outer edge and
+   fades to black toward the middle; the part up to the current speed gets a white rim and an orange glow.
+   Big white number in the middle, trip distance under it, average / max at the bottom.
+   Fonts are the system fonts so it works offline. Dark is the default; "โหมดกลางวัน" switches to light. */
 :root {
   --bg: #000;
   --panel: #0e0e12;
   --ink: #fff;
   --muted: #9b9ba6;
   --line: #26262e;
-  --track: rgba(255, 59, 71, 0.18);
   --accent: #ff3b47;
   --warn: #ffb224;
   --over: #ff5560;
-  --g1: #ff8a2b;
+  --g1: #ff6a3a;
   --g2: #ff3b3b;
-  --g3: #ff2b52;
-  --glow: rgba(150, 0, 18, 0.65);
-  --bike: #e9edf2;
+  --g3: #ff2a4a;
+  --gl1: #ffc15a;
+  --gl2: #ff7a3a;
+  --glow: rgba(150, 0, 18, 0.6);
   --body: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Thai", "Sarabun", sans-serif;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
   --bg: #f1f2f5; --panel: #ffffff; --ink: #15171c; --muted: #5b616b; --line: #d6d9df;
-  --track: rgba(214, 36, 46, 0.15); --glow: rgba(255, 59, 71, 0.16);
-  --warn: #b45f00; --over: #d3212b; --bike: #3a4350; color-scheme: light;
+  --glow: rgba(255, 59, 71, 0.14); --warn: #b45f00; --over: #d3212b; color-scheme: light;
 }
 /* HUD mode: pure black so the reflection on a windshield or visor stays clean.
    Doubled class raises specificity above the theme blocks. */
 :root.hud.hud {
   --bg: #000; --panel: #000; --ink: #fff; --muted: #9b9ba6; --line: #1b1b21;
-  --track: rgba(255, 59, 71, 0.18); --glow: rgba(150, 0, 18, 0.65);
-  --warn: #ffb224; --over: #ff5560; --bike: #e9edf2; color-scheme: dark;
+  --glow: rgba(150, 0, 18, 0.6); --warn: #ffb224; --over: #ff5560; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -64,100 +63,75 @@ button, input { font: inherit; color: inherit; }
 
 .app { max-width: 1040px; margin: 0 auto; display: grid; gap: 8px; }
 
-/* top bar: share | limit + settings | reset */
+/* top bar: share on the left, settings + reset on the right */
 .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; }
-.icon-btn, .pill, .text-btn { background: none; border: 0; cursor: pointer; color: var(--ink); }
+.top-right { display: flex; align-items: center; gap: 4px; }
+.icon-btn, .text-btn { background: none; border: 0; cursor: pointer; color: var(--ink); }
 .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; }
-.icon-btn svg, .pill svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.pill {
-  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
-  font-size: 0.95rem; font-weight: 600;
-}
-.pill svg { width: 20px; height: 20px; }
-.text-btn { min-width: 44px; min-height: 44px; padding: 0 6px; font-size: 1.15rem; font-weight: 600; }
-body[data-zone="over"] .pill { border-color: var(--over); color: var(--over); }
+.icon-btn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn.quiet { color: var(--muted); }
+.text-btn { min-width: 44px; min-height: 44px; padding: 0 6px; font-size: 1.05rem; font-weight: 500; }
 
 .layout {
-  display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "stage" "dash" "stats" "controls";
+  display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr auto auto;
+  grid-template-areas: "dash" "stats" "controls";
+  min-height: calc(100vh - 82px);
+  min-height: calc(100dvh - 82px);
 }
-.stage { grid-area: stage; } .dash { grid-area: dash; } .stats { grid-area: stats; } .controls { grid-area: controls; }
+.dash { grid-area: dash; align-self: center; }
+.stats { grid-area: stats; }
+.controls { grid-area: controls; }
 @media (min-width: 700px) and (orientation: landscape) {
   .layout {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-    grid-template-areas: "dash stage" "dash stats" "dash controls";
-    grid-template-rows: auto auto 1fr; align-items: start;
+    grid-template-rows: 1fr 1fr;
+    grid-template-areas: "dash stats" "dash controls";
+    align-items: center;
   }
+  .stats { align-self: end; }
+  .controls { align-self: start; }
 }
-
-/* bike scene: lightning grows with speed, UFO hovers ahead */
-.stage { justify-self: center; width: min(100%, 360px); filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.25)); }
-.stage svg { display: block; width: 100%; height: auto; overflow: visible; }
-.bolt, .ufo, .spokes, .bikebody { transform-box: fill-box; }
-.bolt {
-  transform-origin: 100% 50%;
-  transform: scaleX(calc(0.35 + 0.85 * var(--k, 0)));
-  opacity: min(1, calc(var(--k, 0) * 2.5));
-  transition: transform 0.3s, opacity 0.3s;
-}
-.spokes { transform-origin: center; }
-@media (prefers-reduced-motion: no-preference) {
-  .ufo { animation: bob 2.4s ease-in-out infinite alternate; }
-  .spokes { animation: spin var(--spin, 1s) linear infinite; animation-play-state: paused; }
-  .stage[data-go="1"] .spokes { animation-play-state: running; }
-  .stage[data-go="1"] .bikebody { animation: shake 0.12s linear infinite alternate; }
-}
-@keyframes bob { from { transform: translateY(-3px); } to { transform: translateY(4px); } }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes shake { from { transform: translateY(0); } to { transform: translateY(0.8px); } }
 
 /* gauge */
 .dash { display: grid; justify-items: center; }
 .gauge {
   position: relative;
   container-type: inline-size;
-  width: min(100%, 440px, calc((100vh - 150px) * 320 / 280));
-  aspect-ratio: 320 / 280;
+  width: min(100%, 440px, calc((100vh - 230px) * 320 / 292));
+  aspect-ratio: 320 / 292;
+}
+@media (min-width: 700px) and (orientation: landscape) {
+  .gauge { width: min(100%, 440px, calc((100vh - 100px) * 320 / 292)); }
 }
 .gauge svg { display: block; width: 100%; height: 100%; overflow: visible; }
-@media (min-width: 700px) and (orientation: landscape) {
-  .gauge { width: min(100%, 440px, calc((100vh - 96px) * 320 / 280)); }
-}
-.track { fill: none; stroke: var(--track); stroke-width: 56; }
-.prog { fill: none; stroke: url(#gGrad); stroke-width: 56; }
-.rimtrack { fill: none; stroke: var(--line); stroke-width: 3; }
-.rim { fill: none; stroke: var(--ink); stroke-width: 3; }
-.tick { stroke: var(--bg); stroke-width: 2.5; }
+.track { fill: none; stroke: url(#gGrad); stroke-width: 68; }
+.shade { fill: none; stroke: url(#gShade); stroke-width: 68; }
+.glow { fill: none; stroke: url(#gGlowGrad); stroke-width: 16; }
+.rimtrack { fill: none; stroke: var(--line); stroke-width: 2; }
+.rim { fill: none; stroke: var(--ink); stroke-width: 3.5; filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.55)); }
+.tick { stroke: var(--bg); stroke-width: 1.5; }
+.cap { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
 .endlabel { fill: var(--ink); font: 700 17px var(--body); text-anchor: middle; dominant-baseline: central; }
 .limit-mark { stroke: var(--warn); stroke-width: 4; stroke-linecap: round; }
-.needle { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.7)); }
+.needle { fill: var(--ink); filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.6)); }
 
-.readout {
-  position: absolute; left: 50%; top: 56%;
-  transform: translate(-50%, -50%);
-  display: grid; justify-items: center; gap: 0; text-align: center;
-}
-.unit { font-size: 1rem; font-size: clamp(0.7rem, 4.4cqw, 1rem); font-weight: 600; color: var(--ink); line-height: 1.2; }
+/* readout: unit above the number, number on the gauge centre, distance below the band ends */
+.unit, .speed, .trip { position: absolute; left: 50%; transform: translate(-50%, -50%); white-space: nowrap; text-align: center; }
+.unit { top: 30.8%; font-size: 1rem; font-size: clamp(0.7rem, 4.8cqw, 1.2rem); font-weight: 600; color: var(--ink); line-height: 1.2; }
 .speed {
+  top: 55%;
   font-weight: 800;
-  font-size: clamp(3.5rem, 20vw, 7rem);
-  font-size: 20cqw;
+  font-size: clamp(3.2rem, 18vw, 6.5rem);
+  font-size: 18.5cqw;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   color: var(--ink);
   min-width: 2ch;
 }
-.trip { color: var(--muted); font-size: 1rem; font-size: clamp(0.7rem, 4.4cqw, 1rem); font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; }
-.flag {
-  margin-top: 8px; width: 44px; height: 30px; border-radius: 5px;
-  width: clamp(28px, 12cqw, 44px); height: auto; aspect-ratio: 44 / 30;
-  background: linear-gradient(#a51931 0 16.66%, #f4f5f8 16.66% 33.33%, #2d2a4a 33.33% 66.66%, #f4f5f8 66.66% 83.33%, #a51931 83.33%);
-  box-shadow: 0 0 14px rgba(255, 255, 255, 0.3);
-}
-body[data-zone="warn"] .speed { color: var(--warn); }
-body[data-zone="over"] .speed { color: var(--over); }
+.trip { top: 91%; color: var(--muted); font-size: 1rem; font-size: clamp(0.75rem, 5.2cqw, 1.3rem); font-weight: 500; font-variant-numeric: tabular-nums; }
+/* over the limit: the number pulses and a red frame flashes (the number itself stays white, as in the reference) */
 @media (prefers-reduced-motion: no-preference) {
   body[data-zone="over"] .speed { animation: pulse 0.5s ease-in-out infinite alternate; }
 }
@@ -172,43 +146,40 @@ body[data-zone="over"] .flash { opacity: 1; }
 /* average / max */
 .stats { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; text-align: center; }
 .stat { display: grid; gap: 0; min-width: 0; }
-.stat dt { color: var(--muted); font-size: 0.85rem; font-weight: 700; line-height: 1.4; letter-spacing: 0.02em; }
-.stat dd { margin: 0; display: flex; align-items: baseline; justify-content: center; gap: 6px; flex-wrap: wrap; }
-.stat .val { font-size: 1.7rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.stat small { color: var(--ink); font-size: 1rem; font-weight: 600; }
+.stat dt { color: var(--muted); font-size: 0.8rem; font-weight: 700; line-height: 1.4; letter-spacing: 0.03em; }
+.stat dd { margin: 0; font-size: 1.1rem; font-weight: 500; font-variant-numeric: tabular-nums; }
 
 /* start / stop + status */
-.controls { display: grid; gap: 10px; }
+.controls { display: grid; gap: 10px; justify-items: center; }
 .btn {
-  min-height: 56px; border-radius: 999px; border: 2px solid var(--accent);
-  font-size: 1.15rem; font-weight: 700; cursor: pointer; padding: 0 16px;
+  width: min(70%, 240px); min-height: 48px; border-radius: 999px; border: 2px solid var(--accent);
+  font-size: 1.05rem; font-weight: 600; cursor: pointer; padding: 0 16px;
 }
 .btn.primary { background: var(--accent); color: #fff; }
 .btn.primary[data-state="running"] { background: transparent; color: var(--ink); }
 .btn:active { transform: translateY(1px); }
-.status { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.9rem; }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.status { margin: 0; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 0.8rem; flex-wrap: wrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
 .status[data-kind="search"] .dot { background: var(--warn); }
 .status[data-kind="live"] .dot { background: #25d3b5; }
 .status[data-kind="err"] .dot { background: var(--over); }
-.gps { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
-.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; }
+.gps { display: flex; align-items: center; gap: 6px; }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
 .bars i { width: 4px; border-radius: 1px; background: var(--line); }
 .bars i:nth-child(1) { height: 5px; }
 .bars i:nth-child(2) { height: 8px; }
-.bars i:nth-child(3) { height: 12px; }
-.bars i:nth-child(4) { height: 16px; }
+.bars i:nth-child(3) { height: 11px; }
+.bars i:nth-child(4) { height: 14px; }
 .bars i.on { background: #25d3b5; }
 .bars.lv1 i.on { background: var(--over); }
 .bars.lv2 i.on { background: var(--warn); }
 
 .notice {
-  margin: 0; padding: 12px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.5;
+  margin: 0; width: 100%; padding: 12px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.5;
   background: var(--panel); border: 1px solid var(--line);
 }
 .notice[data-kind="err"] { border-color: var(--over); }
 .notice[data-kind="warn"] { border-color: var(--warn); }
-.safety { margin: 0; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
 /* settings sheet */
 .sheet { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; justify-content: center; }
@@ -233,7 +204,7 @@ body[data-zone="over"] .flash { opacity: 1; }
   background: var(--bg); font-size: 1.4rem; font-weight: 700; cursor: pointer;
 }
 .stepper output { min-width: 2.4ch; text-align: center; font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.stepper span { color: var(--muted); font-size: 0.8rem; }
+.stepper span { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 .sw {
   appearance: none; -webkit-appearance: none; flex: none; margin: 0;
   width: 52px; height: 32px; border-radius: 16px; position: relative; cursor: pointer;
@@ -247,9 +218,9 @@ body[data-zone="over"] .flash { opacity: 1; }
 .sw:checked { background: var(--accent); border-color: var(--accent); }
 .sw:checked::after { transform: translateX(20px); }
 .sw:disabled { opacity: 0.5; cursor: not-allowed; }
-.sheet .safety { text-align: left; font-size: 0.8rem; line-height: 1.55; padding-top: 8px; }
+.safety { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.55; padding-top: 8px; }
 
-.hud .dash, .hud .stage { transform: scaleX(-1); }
+.hud .dash { transform: scaleX(-1); }
 </style>
 </head>
 <body>
@@ -259,123 +230,67 @@ body[data-zone="over"] .flash { opacity: 1; }
     <button class="icon-btn" id="shareBtn" type="button" aria-label="แชร์สรุปทริป">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M7 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>
     </button>
-    <button class="pill" id="gearBtn" type="button" aria-haspopup="dialog" aria-label="ตั้งค่าและลิมิตความเร็ว">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
-      <span id="limitChip">ลิมิต 80</span>
-    </button>
-    <button class="text-btn" id="resetBtn" type="button">รีเซ็ต</button>
+    <div class="top-right">
+      <button class="icon-btn quiet" id="gearBtn" type="button" aria-haspopup="dialog" aria-label="ตั้งค่าและลิมิตความเร็ว">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+      </button>
+      <button class="text-btn" id="resetBtn" type="button">Reset</button>
+    </div>
   </header>
 
   <main class="layout">
-    <div class="stage" id="stage" data-go="0" aria-hidden="true">
-      <svg viewBox="0 0 360 110">
-        <defs>
-          <linearGradient id="boltGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#ffd23f"/><stop offset="1" stop-color="#ff7a1a"/>
-          </linearGradient>
-          <linearGradient id="ufoGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#e3e8ee"/><stop offset="1" stop-color="#7d8794"/>
-          </linearGradient>
-        </defs>
-
-        <!-- lightning (left of the bike) -->
-        <g transform="translate(70,58)">
-          <g class="bolt">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="url(#boltGrad)"
-                     transform="rotate(68) scale(3.6) translate(-12 -12)"/>
-          </g>
-        </g>
-
-        <!-- motorcycle, side view, facing right -->
-        <g transform="translate(100,0)">
-          <g class="bikebody">
-            <!-- exhaust and swingarm -->
-            <path d="M66 72 L22 80 L22 85 L68 78 Z" fill="#aeb6bf"/>
-            <path d="M35 76 L66 69" stroke="var(--bike)" stroke-width="4" stroke-linecap="round" fill="none"/>
-            <!-- engine -->
-            <path d="M62 56 L92 54 L96 71 L66 75 Z" fill="#8d96a1"/>
-            <rect x="70" y="44" width="15" height="12" rx="2" fill="#6f7883"/>
-            <!-- tank, tail and seat -->
-            <path d="M58 46 C66 35 92 31 105 40 L101 52 C88 50 70 52 58 54 Z" fill="var(--bike)"/>
-            <path d="M12 52 C14 38 32 34 47 40 L60 46 L58 55 L18 55 Z" fill="#cfd5dc"/>
-            <circle cx="33" cy="46" r="7" fill="#fff" stroke="#111" stroke-width="1.5"/>
-            <text x="33" y="46.5" font-size="8" font-weight="800" fill="#111" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif">01</text>
-            <!-- fork, bars, screen, light -->
-            <path d="M104 41 L132 76" stroke="var(--bike)" stroke-width="4" stroke-linecap="round" fill="none"/>
-            <path d="M100 36 L108 32 L117 33" stroke="var(--bike)" stroke-width="3" stroke-linecap="round" fill="none"/>
-            <path d="M104 38 C108 29 115 27 120 30 L113 38 Z" fill="#7fe3ee" opacity="0.85"/>
-            <circle cx="112" cy="46" r="5" fill="#ffd76a"/>
-          </g>
-          <!-- wheels -->
-          <g transform="translate(35 76)">
-            <circle r="19" fill="var(--bg)" stroke="var(--bike)" stroke-width="5"/>
-            <g class="spokes" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round">
-              <line x1="-13" y1="0" x2="13" y2="0"/><line x1="0" y1="-13" x2="0" y2="13"/>
-              <line x1="-9" y1="-9" x2="9" y2="9"/><line x1="9" y1="-9" x2="-9" y2="9"/>
-            </g>
-            <circle r="3" fill="var(--ink)"/>
-          </g>
-          <g transform="translate(132 76)">
-            <circle r="19" fill="var(--bg)" stroke="var(--bike)" stroke-width="5"/>
-            <g class="spokes" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round">
-              <line x1="-13" y1="0" x2="13" y2="0"/><line x1="0" y1="-13" x2="0" y2="13"/>
-              <line x1="-9" y1="-9" x2="9" y2="9"/><line x1="9" y1="-9" x2="-9" y2="9"/>
-            </g>
-            <circle r="3" fill="var(--ink)"/>
-          </g>
-        </g>
-
-        <!-- UFO (ahead of the bike) -->
-        <g transform="translate(312,36)">
-          <g class="ufo">
-            <ellipse cx="0" cy="11" rx="15" ry="3" fill="#5fe3f2" opacity="0.55"/>
-            <path d="M-13 -3 A13 13 0 0 1 13 -3 Z" fill="#7fe9ff" opacity="0.92"/>
-            <ellipse cx="0" cy="0" rx="30" ry="8.5" fill="url(#ufoGrad)"/>
-            <circle cx="-17" cy="1" r="2.2" fill="#ffd76a"/><circle cx="0" cy="3" r="2.2" fill="#5fe3f2"/><circle cx="17" cy="1" r="2.2" fill="#ffd76a"/>
-          </g>
-        </g>
-      </svg>
-    </div>
-
     <section class="dash" aria-label="ความเร็วปัจจุบัน">
       <div class="gauge">
-        <svg viewBox="0 0 320 280" role="img" aria-label="มาตรวัดความเร็ว 0 ถึง 240 กิโลเมตรต่อชั่วโมง">
+        <svg viewBox="0 0 320 292" role="img" aria-label="มาตรวัดความเร็ว 0 ถึง 240 กิโลเมตรต่อชั่วโมง">
           <defs>
+            <!-- hue runs left (orange-red) to right (crimson) -->
             <linearGradient id="gGrad" gradientUnits="userSpaceOnUse" x1="20" y1="0" x2="300" y2="0">
               <stop offset="0" style="stop-color:var(--g1)"/>
-              <stop offset="0.55" style="stop-color:var(--g2)"/>
+              <stop offset="0.5" style="stop-color:var(--g2)"/>
               <stop offset="1" style="stop-color:var(--g3)"/>
             </linearGradient>
-            <radialGradient id="gGlow" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="86">
+            <linearGradient id="gGlowGrad" gradientUnits="userSpaceOnUse" x1="20" y1="0" x2="300" y2="0">
+              <stop offset="0" style="stop-color:var(--gl1)"/>
+              <stop offset="1" style="stop-color:var(--gl2)"/>
+            </linearGradient>
+            <!-- darkens the inner part of the band: radius 72 (inner edge) to 140 (outer edge) -->
+            <radialGradient id="gShade" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="140">
+              <stop offset="0.514" style="stop-color:var(--bg);stop-opacity:0.96"/>
+              <stop offset="0.66" style="stop-color:var(--bg);stop-opacity:0.62"/>
+              <stop offset="0.82" style="stop-color:var(--bg);stop-opacity:0.12"/>
+              <stop offset="0.9" style="stop-color:var(--bg);stop-opacity:0"/>
+            </radialGradient>
+            <radialGradient id="gCenter" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="96">
               <stop offset="0" style="stop-color:var(--glow)"/>
               <stop offset="1" style="stop-color:var(--glow);stop-opacity:0"/>
             </radialGradient>
+            <filter id="blur" filterUnits="userSpaceOnUse" x="0" y="0" width="320" height="292">
+              <feGaussianBlur stdDeviation="3.5"/>
+            </filter>
           </defs>
-          <circle cx="160" cy="160" r="86" fill="url(#gGlow)"/>
+          <circle cx="160" cy="160" r="96" fill="url(#gCenter)"/>
           <path id="track" class="track" d=""/>
-          <path id="prog" class="prog" d=""/>
+          <path id="glow" class="glow" d="" filter="url(#blur)"/>
+          <path id="shade" class="shade" d=""/>
+          <g id="ticks"></g>
           <path id="rimTrack" class="rimtrack" d=""/>
           <path id="rim" class="rim" d=""/>
-          <g id="ticks"></g>
           <line id="limitMark" class="limit-mark" x1="0" y1="0" x2="0" y2="0"/>
-          <line id="needle" class="needle" x1="0" y1="0" x2="0" y2="0"/>
+          <path id="needle" class="needle" d=""/>
         </svg>
-        <div class="readout">
-          <div class="unit">กม./ชม.</div>
-          <div class="speed" id="speed">--</div>
-          <div class="trip"><span id="dist">0.00</span> กม. · <span id="time">0:00:00</span></div>
-          <div class="flag" aria-hidden="true"></div>
-        </div>
+        <div class="unit">km/h</div>
+        <div class="speed" id="speed">--</div>
+        <div class="trip"><span id="dist">0.00</span> km</div>
       </div>
     </section>
 
     <dl class="stats">
-      <div class="stat"><dt>ความเร็วเฉลี่ย</dt><dd><span class="val" id="avg">0</span><small>กม./ชม.</small></dd></div>
-      <div class="stat"><dt>ความเร็วสูงสุด</dt><dd><span class="val" id="max">0</span><small>กม./ชม.</small></dd></div>
+      <div class="stat"><dt>AVG. SPEED</dt><dd><span id="avg">0</span> km/h</dd></div>
+      <div class="stat"><dt>MAX. SPEED</dt><dd><span id="max">0</span> km/h</dd></div>
     </dl>
 
     <div class="controls">
-      <button class="btn primary" id="startBtn" type="button">เริ่มจับ GPS</button>
+      <button class="btn primary" id="startBtn" type="button">Start</button>
       <p class="notice" id="notice" role="alert" hidden></p>
       <p class="status" id="status" data-kind="idle" role="status">
         <span class="dot"></span><span id="statusText">พร้อมใช้งาน กดเริ่มจับ GPS</span>
@@ -384,7 +299,6 @@ body[data-zone="over"] .flash { opacity: 1; }
           <span id="gpsText">GPS</span>
         </span>
       </p>
-      <p class="safety">ไม่ควรมองหน้าจอขณะขับขี่</p>
     </div>
   </main>
 </div>
@@ -397,7 +311,7 @@ body[data-zone="over"] .flash { opacity: 1; }
       <button class="text-btn" id="sheetClose" type="button">ปิด</button>
     </div>
     <div class="row">
-      <span class="name">จำกัดความเร็ว</span>
+      <span class="name">จำกัดความเร็ว<small>ขีดสีเหลืองบนเกจ</small></span>
       <div class="stepper">
         <button id="limitDown" type="button" aria-label="ลดลิมิตลง 5">−</button>
         <output id="limitVal">80</output>
@@ -513,10 +427,13 @@ body[data-zone="over"] .flash { opacity: 1; }
   // ==ENGINE-END==
 
   // ---------- gauge geometry (one scale for band, ticks, labels, needle and limit mark) ----------
-  // The band is a thick stroke along radius RM (inner edge RIN, outer edge ROUT); RR is the thin rim outside it.
-  const CX = 160, CY = 160, RM = 112, RIN = 84, ROUT = 140, RR = 142, A0 = 135, SWEEP = 270;
+  // The band is a thick stroke along radius RM, from inner edge RIN to outer edge ROUT.
+  // RR is the thin rim just outside it, RG the radius of the soft glow along the outer edge.
+  const CX = 160, CY = 160, ROUT = 140, RIN = 72, RM = (ROUT + RIN) / 2, RR = ROUT + 1.75, RG = ROUT - 7;
+  const A0 = 135, SWEEP = 270;
   const ang = v => A0 + SWEEP * Math.min(Math.max(v, 0), VMAX) / VMAX;
-  const pt = (a, r) => [CX + r * Math.cos(a * Math.PI / 180), CY + r * Math.sin(a * Math.PI / 180)];
+  const rad = a => a * Math.PI / 180;
+  const pt = (a, r) => [CX + r * Math.cos(rad(a)), CY + r * Math.sin(rad(a))];
   const f2 = n => n.toFixed(2);
   function arcPath(a1, a2, r) {
     const p1 = pt(a1, r), p2 = pt(a2, r);
@@ -529,14 +446,20 @@ body[data-zone="over"] .flash { opacity: 1; }
     line.setAttribute('x1', f2(p1[0])); line.setAttribute('y1', f2(p1[1]));
     line.setAttribute('x2', f2(p2[0])); line.setAttribute('y2', f2(p2[1]));
   }
+  // thin tapered blade from radius r1 (half width w1) to r2 (half width w2)
+  function needlePath(a, r1, w1, r2, w2) {
+    const ux = Math.cos(rad(a)), uy = Math.sin(rad(a)), px = -uy, py = ux;
+    const q = (r, w, s) => f2(CX + r * ux + s * w * px) + ' ' + f2(CY + r * uy + s * w * py);
+    return 'M' + q(r1, w1, 1) + ' L' + q(r2, w2, 1) + ' L' + q(r2, w2, -1) + ' L' + q(r1, w1, -1) + ' Z';
+  }
 
   const $ = id => document.getElementById(id);
   const el = {
-    speed: $('speed'), prog: $('prog'), track: $('track'), rim: $('rim'), rimTrack: $('rimTrack'),
-    ticks: $('ticks'), needle: $('needle'), stage: $('stage'),
-    limitMark: $('limitMark'), limitChip: $('limitChip'), limitVal: $('limitVal'),
+    speed: $('speed'), track: $('track'), glow: $('glow'), shade: $('shade'), rim: $('rim'), rimTrack: $('rimTrack'),
+    ticks: $('ticks'), needle: $('needle'),
+    limitMark: $('limitMark'), limitVal: $('limitVal'),
     status: $('status'), statusText: $('statusText'), notice: $('notice'),
-    max: $('max'), avg: $('avg'), dist: $('dist'), time: $('time'),
+    max: $('max'), avg: $('avg'), dist: $('dist'),
     start: $('startBtn'), reset: $('resetBtn'), bars: $('bars'), gpsText: $('gpsText'),
     share: $('shareBtn'), gear: $('gearBtn'), sheet: $('sheet'), sheetBg: $('sheetBg'), sheetClose: $('sheetClose'),
     limitDown: $('limitDown'), limitUp: $('limitUp'),
@@ -555,18 +478,23 @@ body[data-zone="over"] .flash { opacity: 1; }
   let elapsed = 0, tickAt = 0, lastBeep = 0, audioCtx = null, wakeLock = null, noticeKind = null;
 
   function drawStatic() {
-    el.track.setAttribute('d', arcPath(A0, A0 + SWEEP, RM));
+    const full = arcPath(A0, A0 + SWEEP, RM);
+    el.track.setAttribute('d', full);
+    el.shade.setAttribute('d', full);
     el.rimTrack.setAttribute('d', arcPath(A0, A0 + SWEEP, RR));
     const NS = 'http://www.w3.org/2000/svg';
-    // dividers every 20 km/h cut the band into segments
-    for (let v = 20; v < VMAX; v += 20) {
+    function line(cls, a, r1, r2) {
       const ln = document.createElementNS(NS, 'line');
-      ln.setAttribute('class', 'tick');
-      setLine(ln, ang(v), RIN - 1, ROUT + 1);
+      ln.setAttribute('class', cls);
+      setLine(ln, a, r1, r2);
       el.ticks.appendChild(ln);
     }
-    [[0, A0 + 9], [VMAX, A0 + SWEEP - 9]].forEach(function (e) {
-      const p = pt(e[1], RM);
+    // thin dividers every 20 km/h, short white caps at both ends of the band
+    for (let v = 20; v < VMAX; v += 20) line('tick', ang(v), RIN - 1, ROUT + 1);
+    line('cap', A0, ROUT - 9, ROUT + 3);
+    line('cap', A0 + SWEEP, ROUT - 9, ROUT + 3);
+    [[0, A0 + 7.5], [VMAX, A0 + SWEEP - 7.5]].forEach(function (e) {
+      const p = pt(e[1], RM + 1);
       const tx = document.createElementNS(NS, 'text');
       tx.setAttribute('class', 'endlabel');
       tx.setAttribute('x', f2(p[0])); tx.setAttribute('y', f2(p[1]));
@@ -576,9 +504,8 @@ body[data-zone="over"] .flash { opacity: 1; }
   }
 
   function applyLimit() {
-    setLine(el.limitMark, ang(prefs.limit), ROUT + 6, ROUT + 16);
+    setLine(el.limitMark, ang(prefs.limit), ROUT + 6, ROUT + 15);
     el.limitVal.textContent = String(prefs.limit);
-    el.limitChip.textContent = 'ลิมิต ' + prefs.limit;
   }
 
   function zoneOf(shown) {
@@ -614,20 +541,15 @@ body[data-zone="over"] .flash { opacity: 1; }
     const shown = Math.round(v);
     el.speed.textContent = hasFix ? String(shown) : '--';
     const filled = hasFix && v > 0.5;
-    el.prog.setAttribute('d', filled ? arcPath(A0, ang(v), RM) : '');
+    el.glow.setAttribute('d', filled ? arcPath(A0, ang(v), RG) : '');
     el.rim.setAttribute('d', filled ? arcPath(A0, ang(v), RR) : '');
-    setLine(el.needle, ang(hasFix ? v : 0), RIN - 6, ROUT + 7);
-    const k = hasFix ? Math.min(1, v / 120) : 0;
-    el.stage.style.setProperty('--k', k.toFixed(3));
-    el.stage.style.setProperty('--spin', (0.8 - 0.65 * k).toFixed(2) + 's');
-    el.stage.dataset.go = v > 3 ? '1' : '0';
+    el.needle.setAttribute('d', needlePath(ang(hasFix ? v : 0), RIN + 14, 0.8, ROUT + 1, 2.1));
     const zone = hasFix ? zoneOf(shown) : 'ok';
     document.body.dataset.zone = zone;
     el.max.textContent = String(Math.round(trip.max));
     el.avg.textContent = String(Math.round(avgKmh(trip)));
     const km = trip.dist / 1000;
     el.dist.textContent = km < 10 ? km.toFixed(2) : km.toFixed(1);
-    el.time.textContent = fmtTime(elapsed);
     alerts(zone);
   }
 
@@ -637,12 +559,12 @@ body[data-zone="over"] .flash { opacity: 1; }
   }
   function updateUI() {
     el.start.dataset.state = running ? 'running' : 'idle';
-    el.start.textContent = running ? 'หยุด' : ((trip.fixes > 0 || elapsed > 0) ? 'เริ่มต่อ' : 'เริ่มจับ GPS');
+    el.start.textContent = running ? 'Stop' : ((trip.fixes > 0 || elapsed > 0) ? 'Resume' : 'Start');
     el.tSim.disabled = running;
     if (running && !hasFix) setStatus('search', el.tSim.checked ? 'โหมดจำลอง กำลังเริ่ม…' : 'กำลังค้นหาสัญญาณ GPS…');
     else if (running) setStatus('live', el.tSim.checked ? 'กำลังบันทึกทริป (โหมดจำลอง)' : 'กำลังบันทึกทริป');
-    else if (trip.fixes > 0 || elapsed > 0) setStatus('idle', 'หยุดชั่วคราว กดเริ่มต่อได้');
-    else setStatus('idle', 'พร้อมใช้งาน กดเริ่มจับ GPS');
+    else if (trip.fixes > 0 || elapsed > 0) setStatus('idle', 'หยุดชั่วคราว กด Resume เพื่อไปต่อ');
+    else setStatus('idle', 'พร้อมใช้งาน กด Start เพื่อเริ่มจับ GPS');
   }
   function showNotice(kind, text) {
     noticeKind = kind;
@@ -761,12 +683,12 @@ body[data-zone="over"] .flash { opacity: 1; }
     render();
   }
 
+  // trip time is not shown on screen, only kept for the share summary
   setInterval(() => {
     if (!running) return;
     const now = performance.now();
     elapsed += (now - tickAt) / 1000;
     tickAt = now;
-    el.time.textContent = fmtTime(elapsed);
   }, 500);
 
   // ---------- share ----------
