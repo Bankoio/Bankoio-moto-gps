@@ -3,7 +3,12 @@
 แอปไมล์ GPS สำหรับมอเตอร์ไซค์ เป็นเว็บแอปไฟล์เดียว (`app/src/main/assets/www/index.html`)
 ห่อด้วย Android WebView เพื่อให้ติดตั้งเป็น APK ได้
 
-## ดาวน์โหลด APK
+## ดาวน์โหลด APK (ง่ายที่สุด)
+
+เปิดลิงก์นี้บนมือถือ Android แล้วแตะติดตั้งได้เลย ไม่ต้องแตก zip:
+https://github.com/Bankoio/Bankoio-moto-gps/releases/latest/download/moto-gps.apk
+
+## ดาวน์โหลดจากหน้า Actions (ทางเลือก)
 
 1. เปิดแท็บ **Actions** ของรีโปนี้ แล้วเลือกรันล่าสุดของ workflow **Build APK**
    (หรือกด **Run workflow** เพื่อสั่ง build เอง)
