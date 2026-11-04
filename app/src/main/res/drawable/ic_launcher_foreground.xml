@@ -7,7 +7,7 @@
     <!-- gauge arc -->
     <path
         android:pathData="M35.62,72.38 A26,26 0 1 1 72.38,72.38"
-        android:strokeColor="#25D3B5"
+        android:strokeColor="#FF3B47"
         android:strokeWidth="5"
         android:strokeLineCap="round" />
     <!-- needle -->
