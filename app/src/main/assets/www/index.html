@@ -144,15 +144,12 @@ body[data-zone="over"] .flash { opacity: 1; }
 .stat dt { color: var(--muted); font-size: 0.95rem; font-weight: 700; line-height: 1.4; letter-spacing: 0.02em; }
 .stat dd { margin: 0; font-size: 1.45rem; font-weight: 500; line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* start / stop + status */
+/* status (GPS starts by itself, so there is no start / stop button) */
 .controls { display: grid; gap: 10px; }
-.btn {
-  min-height: 52px; border-radius: 999px; border: 2px solid var(--accent);
-  font-size: 1.1rem; font-weight: 700; cursor: pointer; padding: 0 16px;
+.notice button {
+  display: block; margin-top: 10px; min-height: 44px; padding: 0 20px; border-radius: 999px;
+  border: 2px solid var(--accent); background: var(--accent); color: #fff; font-weight: 700; cursor: pointer;
 }
-.btn.primary { background: var(--accent); color: #fff; }
-.btn.primary[data-state="running"] { background: transparent; color: var(--ink); }
-.btn:active { transform: translateY(1px); }
 .status { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.88rem; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
 .status[data-kind="search"] .dot { background: var(--warn); }
@@ -284,10 +281,9 @@ body[data-zone="over"] .flash { opacity: 1; }
     </dl>
 
     <div class="controls">
-      <button class="btn primary" id="startBtn" type="button">เริ่มจับ GPS</button>
-      <p class="notice" id="notice" role="alert" hidden></p>
+      <p class="notice" id="notice" role="alert" hidden><span id="noticeText"></span><button id="retryBtn" type="button" hidden>ลองอีกครั้ง</button></p>
       <p class="status" id="status" data-kind="idle" role="status">
-        <span class="dot"></span><span id="statusText">พร้อมใช้งาน กดเริ่มจับ GPS</span>
+        <span class="dot"></span><span id="statusText">กำลังเริ่ม…</span>
         <span class="time" id="time">0:00:00</span>
         <span class="gps" title="ความแม่นยำของสัญญาณ GPS">
           <span class="bars" id="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
@@ -447,7 +443,7 @@ body[data-zone="over"] .flash { opacity: 1; }
     limitMark: $('limitMark'), limitChip: $('limitChip'), limitVal: $('limitVal'),
     status: $('status'), statusText: $('statusText'), notice: $('notice'),
     max: $('max'), avg: $('avg'), dist: $('dist'), time: $('time'),
-    start: $('startBtn'), reset: $('resetBtn'), bars: $('bars'), gpsText: $('gpsText'),
+    reset: $('resetBtn'), retry: $('retryBtn'), noticeText: $('noticeText'), bars: $('bars'), gpsText: $('gpsText'),
     share: $('shareBtn'), gear: $('gearBtn'), sheet: $('sheet'), sheetBg: $('sheetBg'), sheetClose: $('sheetClose'),
     limitDown: $('limitDown'), limitUp: $('limitUp'),
     tSound: $('tSound'), tVibrate: $('tVibrate'), tHud: $('tHud'), tDay: $('tDay'), tSim: $('tSim')
@@ -544,18 +540,15 @@ body[data-zone="over"] .flash { opacity: 1; }
     el.statusText.textContent = text;
   }
   function updateUI() {
-    el.start.dataset.state = running ? 'running' : 'idle';
-    el.start.textContent = running ? 'หยุด' : ((trip.fixes > 0 || elapsed > 0) ? 'เริ่มต่อ' : 'เริ่มจับ GPS');
-    el.tSim.disabled = running;
     if (running && !hasFix) setStatus('search', el.tSim.checked ? 'โหมดจำลอง กำลังเริ่ม…' : 'กำลังค้นหาสัญญาณ GPS…');
     else if (running) setStatus('live', el.tSim.checked ? 'บันทึกทริป (จำลอง)' : 'กำลังบันทึกทริป');
-    else if (trip.fixes > 0 || elapsed > 0) setStatus('idle', 'หยุดชั่วคราว กดเริ่มต่อได้');
-    else setStatus('idle', 'พร้อมใช้งาน กดเริ่มจับ GPS');
+    else setStatus('idle', 'GPS หยุดอยู่ จะเริ่มเองเมื่อเปิดแอป');
   }
-  function showNotice(kind, text) {
+  function showNotice(kind, text, canRetry) {
     noticeKind = kind;
     el.notice.dataset.kind = kind;
-    el.notice.textContent = text;
+    el.noticeText.textContent = text;
+    el.retry.hidden = !canRetry;
     el.notice.hidden = false;
   }
   function hideNotice() { noticeKind = null; el.notice.hidden = true; }
@@ -593,7 +586,7 @@ body[data-zone="over"] .flash { opacity: 1; }
   function onErr(e) {
     if (e.code === 1) {
       stop();
-      showNotice('err', 'ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง เปิดสิทธิ์ตำแหน่ง (Location) ให้เบราว์เซอร์และเว็บไซต์นี้ในการตั้งค่า แล้วกดเริ่มอีกครั้ง ถ้าเปิดไฟล์จากในเครื่องโดยตรง ให้โฮสต์ไฟล์ผ่านลิงก์ https ก่อน');
+      showNotice('err', 'ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง กด "ลองอีกครั้ง" แล้วเลือกอนุญาต ถ้าไม่มีหน้าต่างถามขึ้นมา ให้เปิดสิทธิ์ตำแหน่งของแอปนี้ในการตั้งค่าเครื่อง', true);
     } else if (e.code === 2) {
       showNotice('warn', 'ยังไม่พบสัญญาณ GPS ลองออกไปที่โล่ง และเปิดตำแหน่งแบบความแม่นยำสูงในการตั้งค่าเครื่อง');
     } else {
@@ -623,8 +616,16 @@ body[data-zone="over"] .flash { opacity: 1; }
     try { if (wakeLock) wakeLock.release(); } catch (e) { /* ignore */ }
     wakeLock = null;
   }
+  // GPS follows the app: it starts when the app opens or comes back and stops when the app is left.
+  // The Android wrapper calls these two when the activity stops / starts; visibilitychange covers browsers.
+  // The trip totals stay in memory, so a quick switch to another app does not lose them.
+  function pauseGps() { if (running) stop(); }
+  function resumeGps() { if (!running) start(); }
+  window.motoGpsPause = pauseGps;
+  window.motoGpsResume = resumeGps;
   document.addEventListener('visibilitychange', () => {
-    if (running && document.visibilityState === 'visible') requestWake();
+    if (document.visibilityState === 'hidden') pauseGps();
+    else resumeGps();
   });
 
   function start() {
@@ -708,8 +709,10 @@ body[data-zone="over"] .flash { opacity: 1; }
   function closeSheet() { el.sheet.hidden = true; el.gear.focus(); }
 
   // ---------- controls ----------
-  el.start.addEventListener('click', () => { running ? stop() : start(); });
+  el.retry.addEventListener('click', resumeGps);
   el.reset.addEventListener('click', resetTrip);
+  // switching between simulation and real GPS starts a clean trip so fake and real data never mix
+  el.tSim.addEventListener('change', () => { pauseGps(); resetTrip(); resumeGps(); });
   el.share.addEventListener('click', shareTrip);
   el.gear.addEventListener('click', openSheet);
   el.sheetClose.addEventListener('click', closeSheet);
@@ -739,6 +742,7 @@ body[data-zone="over"] .flash { opacity: 1; }
   el.tDay.checked = prefs.theme === 'light';
   updateUI();
   render();
+  if (document.visibilityState !== 'hidden') start();   // start right away, no button
 })();
 </script>
 </body>

@@ -85,13 +85,8 @@ public class MainActivity extends Activity {
             }
         });
 
-        if (!hasLocationPermission()) {
-            requestPermissions(new String[]{
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-            }, REQ_LOCATION);
-        }
-
+        // No permission request here: the page starts GPS by itself on load, and the geolocation prompt
+        // handler above asks for the permission once. Asking twice would cancel the first request.
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
@@ -113,6 +108,24 @@ public class MainActivity extends Activity {
             pendingCallback = null;
             pendingOrigin = null;
         }
+    }
+
+    // GPS runs only while the app is on screen: stop it when the app is left, start it again on return.
+    // onStop (not onPause) so the system permission dialog, which only pauses the activity, does not cut it off.
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (webView != null) {
+            webView.evaluateJavascript("window.motoGpsResume && window.motoGpsResume()", null);
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        if (webView != null) {
+            webView.evaluateJavascript("window.motoGpsPause && window.motoGpsPause()", null);
+        }
+        super.onStop();
     }
 
     @Override
