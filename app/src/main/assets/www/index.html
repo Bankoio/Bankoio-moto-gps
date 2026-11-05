@@ -11,22 +11,24 @@
 <style>
 /* Look: flat black screen, one big arc gauge (0-240) whose band fades from a bright outer edge to a dark
    inner edge, big white number in the middle, trip distance under the gauge, average / max at the bottom.
-   Tap the gauge to change its color. System fonts only, so it works offline. */
+   The gauge color is a set of CSS variables (defaults below = red); tapping the gauge cycles through the
+   palette in COLORS (see the script). System fonts only, so it works offline. */
 :root {
   --bg: #000;
-  --panel: #0e0e12;
   --ink: #fff;
   --muted: #9a9aa2;
   --line: #26262e;
+  --panel: #0e0e12;
   --warn: #ffb224;
   --over: #ff5560;
-  /* gauge colors: the script rewrites these when the color changes (these are the red defaults).
-     --r*: band not yet reached, inner edge to outer edge. --f*: band already covered by the needle. */
-  --r0: #5a0a14; --r1: #6e0c18; --r2: #c91d2c; --r3: #ff2f40; --r4: #ff4a56;
-  --f0: #6a1208; --f1: #8a1410; --f2: #e0262a; --f3: #ff4a2c; --f4: #ff8a3a; --f5: #ffc66c;
-  --glow: rgba(135, 0, 16, 0.75);
-  --rim: #ff5a64;
-  --accent: #ff3b47;
+  /* gauge colors: band (not yet reached), filled part (reached), glow behind the number, accent */
+  --bi0: hsl(355, 80%, 20%); --bi1: hsl(355, 80%, 24%);
+  --b2: hsl(355, 75%, 44%); --b3: hsl(355, 100%, 58%); --b4: hsl(355, 100%, 64%);
+  --fi0: hsl(367, 80%, 20%); --fi1: hsl(367, 80%, 26%);
+  --f2: hsl(355, 78%, 50%); --f3: hsl(5, 100%, 58%); --f4: hsl(21, 100%, 62%); --f5: hsl(35, 100%, 71%);
+  --glow: hsla(355, 100%, 28%, 0.75);
+  --rim: hsl(355, 100%, 68%);
+  --accent: hsl(355, 100%, 59%);
   --body: -apple-system, system-ui, "SF Pro Display", "Segoe UI", Roboto, "Noto Sans Thai", "Sarabun", sans-serif;
   color-scheme: dark;
 }
@@ -45,7 +47,7 @@ body {
   padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  user-select: none; -webkit-user-select: none;
+  -webkit-user-select: none; user-select: none;
 }
 [hidden] { display: none !important; }
 button { font: inherit; color: inherit; }
@@ -56,12 +58,17 @@ button { font: inherit; color: inherit; }
   min-height: calc(100vh - 28px);
 }
 
-/* top bar: share | reset */
-.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; }
+/* top bar: share | short message | reset */
+.top { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; min-height: 48px; }
 .icon-btn, .text-btn { background: none; border: 0; cursor: pointer; color: var(--ink); }
 .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; }
 .icon-btn svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .text-btn { min-width: 44px; min-height: 44px; padding: 0 4px; font-size: 1.2rem; font-weight: 500; }
+.toast { justify-self: center; color: var(--muted); font-size: 0.95rem; font-weight: 600; text-align: center; transition: opacity 0.25s; }
+.toast::before {
+  content: ""; display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; margin-right: 0.45em;
+  background: var(--accent); vertical-align: -0.02em;
+}
 
 .layout {
   flex: 1; display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr);
@@ -81,7 +88,7 @@ button { font: inherit; color: inherit; }
 .gauge {
   position: relative;
   container-type: inline-size;
-  width: min(100%, 460px, calc((100vh - 200px) * 320 / 300));
+  width: min(100%, 460px, calc((100vh - 170px) * 320 / 300));
   aspect-ratio: 320 / 300;
   cursor: pointer;
 }
@@ -97,7 +104,6 @@ button { font: inherit; color: inherit; }
 .gloss { fill: none; stroke: var(--ink); stroke-opacity: 0.2; stroke-width: 3; stroke-linecap: round; filter: blur(1.2px); }
 .tick { stroke: var(--bg); stroke-width: 1.6; }
 .endlabel { fill: var(--ink); font: 700 17px var(--body); text-anchor: middle; dominant-baseline: central; }
-.limit-mark { stroke: var(--warn); stroke-width: 4; stroke-linecap: round; }
 .needle { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.6)); }
 
 .unit, .speed, .trip { position: absolute; left: 50%; transform: translate(-50%, -50%); white-space: nowrap; text-align: center; pointer-events: none; }
@@ -126,15 +132,6 @@ body[data-zone="over"] .speed { color: var(--over); }
 }
 body[data-zone="over"] .flash { opacity: 1; }
 
-/* short label shown when the color changes */
-.toast {
-  position: fixed; left: 50%; top: 16%; transform: translateX(-50%); z-index: 6; pointer-events: none;
-  padding: 8px 18px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line);
-  font-weight: 600; opacity: 0; transition: opacity 0.2s;
-}
-.toast.show { opacity: 1; }
-.toast i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; background: var(--rim); }
-
 /* average / max */
 .stats { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; text-align: center; padding-top: 8px; }
 .stat { display: grid; gap: 0; min-width: 0; }
@@ -144,11 +141,11 @@ body[data-zone="over"] .flash { opacity: 1; }
 /* status (GPS starts by itself, so there is no start / stop button) */
 .controls { display: grid; gap: 10px; }
 .status { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.88rem; }
+#statusText { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
 .status[data-kind="search"] .dot { background: var(--warn); }
 .status[data-kind="live"] .dot { background: #25d3b5; }
 .status[data-kind="err"] .dot { background: var(--over); }
-#statusText { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .gps { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; white-space: nowrap; }
 .bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; }
@@ -181,25 +178,27 @@ body[data-zone="over"] .flash { opacity: 1; }
     <button class="icon-btn" id="shareBtn" type="button" aria-label="แชร์สรุปทริป">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M7 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>
     </button>
+    <span class="toast" id="toast" role="status" aria-live="polite" hidden></span>
     <button class="text-btn" id="resetBtn" type="button">Reset</button>
   </header>
 
   <main class="layout">
     <section class="dash" aria-label="ความเร็วปัจจุบัน">
-      <div class="gauge" id="gauge" title="แตะเพื่อเปลี่ยนสี">
-        <svg viewBox="0 0 320 300" role="img" aria-label="มาตรวัดความเร็ว 0 ถึง 240 กิโลเมตรต่อชั่วโมง แตะเพื่อเปลี่ยนสี">
+      <div class="gauge" id="gauge">
+        <svg viewBox="0 0 320 300" role="button" tabindex="0" aria-label="วงความเร็ว 0 ถึง 240 กิโลเมตรต่อชั่วโมง แตะเพื่อเปลี่ยนสี">
           <defs>
-            <!-- brightness across the band: transparent at the inner edge (r=84) up to bright at the outer edge (r=140) -->
+            <!-- brightness across the band: transparent at the inner edge (r=84) up to bright at the outer edge (r=140);
+                 all colors come from the CSS variables so the palette can be swapped at run time -->
             <radialGradient id="gBand" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="140">
-              <stop offset="0.6" style="stop-color:var(--r0)" stop-opacity="0"/>
-              <stop offset="0.68" style="stop-color:var(--r1)" stop-opacity="0.7"/>
-              <stop offset="0.82" style="stop-color:var(--r2)"/>
-              <stop offset="0.93" style="stop-color:var(--r3)"/>
-              <stop offset="1" style="stop-color:var(--r4)"/>
+              <stop offset="0.6" style="stop-color:var(--bi0)" stop-opacity="0"/>
+              <stop offset="0.68" style="stop-color:var(--bi1)" stop-opacity="0.7"/>
+              <stop offset="0.82" style="stop-color:var(--b2)"/>
+              <stop offset="0.93" style="stop-color:var(--b3)"/>
+              <stop offset="1" style="stop-color:var(--b4)"/>
             </radialGradient>
             <radialGradient id="gFill" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="140">
-              <stop offset="0.6" style="stop-color:var(--f0)" stop-opacity="0"/>
-              <stop offset="0.68" style="stop-color:var(--f1)" stop-opacity="0.75"/>
+              <stop offset="0.6" style="stop-color:var(--fi0)" stop-opacity="0"/>
+              <stop offset="0.68" style="stop-color:var(--fi1)" stop-opacity="0.75"/>
               <stop offset="0.8" style="stop-color:var(--f2)"/>
               <stop offset="0.9" style="stop-color:var(--f3)"/>
               <stop offset="0.96" style="stop-color:var(--f4)"/>
@@ -218,7 +217,6 @@ body[data-zone="over"] .flash { opacity: 1; }
           <path id="rim" class="rim" d=""/>
           <path id="ringBottom" class="ringbottom" d=""/>
           <path id="gloss" class="gloss" d=""/>
-          <line id="limitMark" class="limit-mark" x1="0" y1="0" x2="0" y2="0"/>
           <line id="needle" class="needle" x1="0" y1="0" x2="0" y2="0"/>
         </svg>
         <div class="unit">km/h</div>
@@ -246,7 +244,6 @@ body[data-zone="over"] .flash { opacity: 1; }
     </div>
   </main>
 </div>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <noscript>ต้องเปิดใช้งาน JavaScript เพื่อใช้แอปนี้</noscript>
 
 <script>
@@ -331,25 +328,22 @@ body[data-zone="over"] .flash { opacity: 1; }
   }
   // ==ENGINE-END==
 
-  // Speed limit for the alert: the number turns amber from 90% of it and red above it, with a beep and vibration.
+  // Speed limit: fixed. Above it the number turns red, the screen edge flashes, and the phone beeps / vibrates.
   const LIMIT = 200;
-  // Testing aid only (no screen for it): open the page with ?sim=<peak km/h> to run a built-in simulated trip.
-  const params = new URLSearchParams(location.search);
-  const SIM = params.has('sim');
-  const SIM_TOP = Number(params.get('sim')) > 20 ? Number(params.get('sim')) : 145;
 
-  // gauge colors: tap the gauge to go to the next one. h = base hue, d = which way the covered band shifts
-  // (toward yellow for red / orange / purple-pink, toward cyan or lime for blue / green).
+  // Gauge palette. h = hue of the band, k = how far the hue drifts toward the bright rim of the filled part.
   const COLORS = [
-    { name: 'แดง', h: 355, d: 1 },
-    { name: 'ส้ม', h: 24, d: 1 },
-    { name: 'เขียว', h: 145, d: -1 },
-    { name: 'ฟ้า', h: 210, d: -1 },
-    { name: 'ม่วง', h: 275, d: 1 },
-    { name: 'ชมพู', h: 325, d: -1 }
+    { name: 'แดง',     h: 355, k: 40 },
+    { name: 'ส้ม',     h: 24,  k: 26 },
+    { name: 'เหลือง',  h: 46,  k: 12 },
+    { name: 'เขียว',   h: 145, k: 32 },
+    { name: 'ฟ้า',     h: 192, k: -26 },
+    { name: 'น้ำเงิน', h: 222, k: -36 },
+    { name: 'ม่วง',    h: 275, k: 36 },
+    { name: 'ชมพู',    h: 325, k: -30 }
   ];
 
-  // ---------- gauge geometry (one scale for band, ticks, labels, needle and limit mark) ----------
+  // ---------- gauge geometry (one scale for band, ticks, labels and needle) ----------
   // The band is a thick stroke along radius RM (inner edge RIN, outer edge ROUT); RR is the thin rim outside it.
   const CX = 160, CY = 160, RM = 112, RIN = 84, ROUT = 140, RR = 141.5, A0 = 135, SWEEP = 270;
   const ang = v => A0 + SWEEP * Math.min(Math.max(v, 0), VMAX) / VMAX;
@@ -370,19 +364,24 @@ body[data-zone="over"] .flash { opacity: 1; }
   const $ = id => document.getElementById(id);
   const el = {
     speed: $('speed'), prog: $('prog'), track: $('track'), rim: $('rim'), rimTrack: $('rimTrack'),
-    ringBottom: $('ringBottom'), gloss: $('gloss'), ticks: $('ticks'), needle: $('needle'), limitMark: $('limitMark'),
-    gauge: $('gauge'), toast: $('toast'),
-    status: $('status'), statusText: $('statusText'), notice: $('notice'),
+    ringBottom: $('ringBottom'), gloss: $('gloss'), ticks: $('ticks'), needle: $('needle'), gauge: $('gauge'),
+    status: $('status'), statusText: $('statusText'), notice: $('notice'), toast: $('toast'),
     max: $('max'), avg: $('avg'), dist: $('dist'), time: $('time'),
     reset: $('resetBtn'), retry: $('retryBtn'), noticeText: $('noticeText'), bars: $('bars'), gpsText: $('gpsText'),
     share: $('shareBtn')
   };
 
-  // ---------- preferences (only the gauge color is remembered) ----------
+  // Simulation (testing at home, no GPS): open the page with ?sim in a browser. Not available inside the app.
+  const SIM = /[?&]sim(&|=|$)/.test(location.search);
+
+  // ---------- preferences: only the gauge color is remembered ----------
   const PREF_KEY = 'moto-gps-prefs-v1';
-  const prefs = { color: 0 };
-  try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); } catch (e) { /* ignore */ }
-  if (!(prefs.color >= 0 && prefs.color < COLORS.length)) prefs.color = 0;
+  const prefs = { color: 0, hinted: false };
+  try {
+    const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
+    if (Number.isInteger(saved.color) && saved.color >= 0 && saved.color < COLORS.length) prefs.color = saved.color;
+    prefs.hinted = saved.hinted === true;
+  } catch (e) { /* ignore */ }
   function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
 
   // ---------- run state ----------
@@ -392,28 +391,28 @@ body[data-zone="over"] .flash { opacity: 1; }
 
   // ---------- gauge color ----------
   const hsl = (h, s, l) => 'hsl(' + (((h % 360) + 360) % 360) + ', ' + s + '%, ' + l + '%)';
-  function applyColor() {
-    const c = COLORS[prefs.color], h = c.h, d = c.d, root = document.documentElement.style;
-    const set = (k, v) => root.setProperty(k, v);
-    // not yet reached: inner edge (fades out) to bright outer edge
-    set('--r0', hsl(h, 85, 18)); set('--r1', hsl(h, 85, 24)); set('--r2', hsl(h, 75, 44));
-    set('--r3', hsl(h, 100, 59)); set('--r4', hsl(h, 100, 64));
-    // covered by the needle: same, but the outer edge glows toward a second hue
-    set('--f0', hsl(h, 80, 22)); set('--f1', hsl(h + d * 5, 80, 29)); set('--f2', hsl(h + d * 4, 76, 51));
-    set('--f3', hsl(h + d * 13, 100, 58)); set('--f4', hsl(h + d * 29, 100, 61)); set('--f5', hsl(h + d * 42, 100, 71));
-    set('--glow', 'hsla(' + h + ', 100%, 26%, 0.75)');
-    set('--rim', hsl(h, 100, 68));
-    set('--accent', hsl(h, 100, 62));
+  function applyColor(i) {
+    const c = COLORS[i], h = c.h, k = c.k, set = (n, v) => document.documentElement.style.setProperty(n, v);
+    set('--bi0', hsl(h, 80, 20));        set('--bi1', hsl(h, 80, 24));
+    set('--b2', hsl(h, 75, 44));         set('--b3', hsl(h, 100, 58));        set('--b4', hsl(h, 100, 64));
+    set('--fi0', hsl(h + k * 0.3, 80, 20)); set('--fi1', hsl(h + k * 0.3, 80, 26));
+    set('--f2', hsl(h, 78, 50));         set('--f3', hsl(h + k * 0.25, 100, 58));
+    set('--f4', hsl(h + k * 0.65, 100, 62)); set('--f5', hsl(h + k, 100, 71));
+    set('--glow', 'hsla(' + (((h % 360) + 360) % 360) + ', 100%, 28%, 0.75)');
+    set('--rim', hsl(h, 100, 68));       set('--accent', hsl(h, 100, 59));
+  }
+  function showToast(text, ms) {
+    el.toast.textContent = text;
+    el.toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.toast.hidden = true; }, ms || 1600);
   }
   function nextColor() {
     prefs.color = (prefs.color + 1) % COLORS.length;
+    prefs.hinted = true;
     savePrefs();
-    applyColor();
-    el.toast.innerHTML = '<i></i>';
-    el.toast.appendChild(document.createTextNode('สี' + COLORS[prefs.color].name));
-    el.toast.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.toast.classList.remove('show'), 1300);
+    applyColor(prefs.color);
+    showToast('สีวง: ' + COLORS[prefs.color].name);
   }
 
   function drawStatic() {
@@ -421,7 +420,6 @@ body[data-zone="over"] .flash { opacity: 1; }
     el.rimTrack.setAttribute('d', arcPath(A0, A0 + SWEEP, RR));
     el.ringBottom.setAttribute('d', arcPath(A0 + SWEEP, A0 + 360, RR));   // faint ring through the opening
     el.gloss.setAttribute('d', arcPath(72, 108, 137));
-    setLine(el.limitMark, ang(LIMIT), ROUT + 6, ROUT + 16);
     const NS = 'http://www.w3.org/2000/svg';
     // dividers every 20 km/h cut the band into segments
     for (let v = 20; v < VMAX; v += 20) {
@@ -550,7 +548,7 @@ body[data-zone="over"] .flash { opacity: 1; }
     const heading = 20 * Math.PI / 180;
     function step() {
       k++;
-      const kmh = Math.max(0, SIM_TOP * 0.48 + SIM_TOP * 0.52 * Math.sin(k / 10 - 1.5));
+      const kmh = Math.max(0, 70 + 75 * Math.sin(k / 10 - 1.5));
       const d = kmh / 3.6;
       lat += d * Math.cos(heading) / 111320;
       lon += d * Math.sin(heading) / (111320 * Math.cos(lat * Math.PI / 180));
@@ -610,14 +608,6 @@ body[data-zone="over"] .flash { opacity: 1; }
     render();
   }
 
-  setInterval(() => {
-    if (!running) return;
-    const now = performance.now();
-    elapsed += (now - tickAt) / 1000;
-    tickAt = now;
-    el.time.textContent = fmtTime(elapsed);
-  }, 500);
-
   // GPS follows the app: it starts when the app opens or comes back and stops when the app is left.
   // The Android wrapper calls these two when the activity stops / starts; visibilitychange covers browsers.
   // The trip totals stay in memory, so a quick switch to another app does not lose them.
@@ -629,10 +619,14 @@ body[data-zone="over"] .flash { opacity: 1; }
     if (document.visibilityState === 'hidden') pauseGps();
     else resumeGps();
   });
-  // browsers keep the alert sound muted until the first touch
-  document.addEventListener('pointerdown', () => {
-    try { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) { /* ignore */ }
-  }, { passive: true });
+
+  setInterval(() => {
+    if (!running) return;
+    const now = performance.now();
+    elapsed += (now - tickAt) / 1000;
+    tickAt = now;
+    el.time.textContent = fmtTime(elapsed);
+  }, 500);
 
   // ---------- share ----------
   function tripSummary() {
@@ -663,14 +657,18 @@ body[data-zone="over"] .flash { opacity: 1; }
   el.retry.addEventListener('click', resumeGps);
   el.reset.addEventListener('click', resetTrip);
   el.share.addEventListener('click', shareTrip);
-  el.gauge.addEventListener('click', nextColor);
+  el.gauge.addEventListener('click', nextColor);          // tap the gauge to change its color
+  el.gauge.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nextColor(); }
+  });
 
   // ---------- init ----------
-  applyColor();
   drawStatic();
+  applyColor(prefs.color);
   updateUI();
   render();
-  if (document.visibilityState !== 'hidden') start();   // start right away, no button
+  if (!prefs.hinted) showToast('แตะที่วงเพื่อเปลี่ยนสี', 4000);   // one-time hint
+  if (document.visibilityState !== 'hidden') start();           // start right away, no button
 })();
 </script>
 </body>
