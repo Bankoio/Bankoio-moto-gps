@@ -9,15 +9,16 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>ไมล์ GPS</title>
 <style>
-/* Look: flat black screen, one big arc gauge (0-240) whose band fades from a bright outer edge to a dark
-   inner edge, big white number in the middle, trip distance under the gauge, average / max at the bottom.
-   The gauge color is a set of CSS variables (defaults below = red); tapping the gauge cycles through the
-   palette in COLORS (see the script). System fonts only, so it works offline. */
+/* Four screens behind a bottom tab bar (Gauges / Acceleration / Limit / More), dark theme.
+   The gauge color is a set of CSS variables (defaults = red); the script swaps them (see COLORS).
+   System fonts only, so it works offline. */
 :root {
   --bg: #000;
   --ink: #fff;
-  --muted: #9a9aa2;
-  --line: #26262e;
+  --muted: #8e8e93;
+  --line: #2c2c2e;
+  --bar: #1c1c1e;
+  --tint: #409cff;
   --panel: #0e0e12;
   --warn: #ffb224;
   --over: #ff5560;
@@ -32,217 +33,337 @@
   --body: -apple-system, system-ui, "SF Pro Display", "Segoe UI", Roboto, "Noto Sans Thai", "Sarabun", sans-serif;
   color-scheme: dark;
 }
+/* Limit screen: the whole screen turns dark red while over the limit */
+body[data-tab="limit"][data-over="1"] { --bg: #800000; --bar: #3f1414; --line: #5a1c1c; }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html, body { height: 100%; }
 body {
   margin: 0;
-  min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--body);
   font-size: 16px;
   line-height: 1.5;
-  padding-block: max(8px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-bottom, 0px));
-  padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   -webkit-user-select: none; user-select: none;
 }
 [hidden] { display: none !important; }
-button { font: inherit; color: inherit; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 :focus-visible { outline: 3px solid var(--warn); outline-offset: 2px; }
 
 .app {
-  max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px;
-  min-height: calc(100vh - 28px);
+  position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
 }
+.screen, .view { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 
-/* top bar: share | short message | reset */
-.top { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; min-height: 48px; }
-.icon-btn, .text-btn { background: none; border: 0; cursor: pointer; color: var(--ink); }
-.icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; }
+/* navigation bar (Acceleration / Limit / More) */
+.nav {
+  flex: none; height: 48px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding: 0 16px; background: var(--bar); font-size: 1.06rem;
+}
+.nav .title { font-weight: 600; }
+.nav-btn { min-height: 44px; color: var(--tint); font-size: 1.06rem; display: inline-flex; align-items: center; gap: 2px; }
+.nav-btn:last-child { justify-self: end; }
+.nav-btn:first-child { justify-self: start; }
+.nav.plain .nav-btn { color: var(--ink); }
+.nav-btn[aria-pressed="true"] { font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
+.nav-btn svg { width: 12px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* tab bar */
+.tabbar {
+  flex: none; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--bar);
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.tab { display: grid; justify-items: center; align-content: center; gap: 1px; min-height: 56px; color: #76767c; font-size: 11px; font-weight: 500; }
+.tab svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tab[aria-selected="true"] { color: #fff; }
+
+/* ---------- Gauges ---------- */
+.top { flex: none; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; min-height: 52px; padding: 0 16px; }
+.icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--ink); margin-left: -8px; }
 .icon-btn svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.text-btn { min-width: 44px; min-height: 44px; padding: 0 4px; font-size: 1.2rem; font-weight: 500; }
-.toast { justify-self: center; color: var(--muted); font-size: 0.95rem; font-weight: 600; text-align: center; transition: opacity 0.25s; }
+.text-btn { min-width: 44px; min-height: 44px; font-size: 1.2rem; font-weight: 400; color: var(--ink); margin-right: -4px; }
+.topmid { position: relative; display: grid; place-items: center; min-height: 24px; }
+.gpsline { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+.topmid.toasting .gpsline { visibility: hidden; }
+.toast { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); white-space: nowrap; color: var(--muted); font-size: 0.95rem; font-weight: 600; }
 .toast::before {
   content: ""; display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; margin-right: 0.45em;
   background: var(--accent); vertical-align: -0.02em;
 }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+.bars i { width: 4px; border-radius: 1px; background: var(--line); }
+.bars i:nth-child(1) { height: 4px; }
+.bars i:nth-child(2) { height: 7px; }
+.bars i:nth-child(3) { height: 10px; }
+.bars i:nth-child(4) { height: 14px; }
+.bars i.on { background: #25d3b5; }
+.bars.lv1 i.on { background: var(--over); }
+.bars.lv2 i.on { background: var(--warn); }
 
-.layout {
-  flex: 1; display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 1fr auto auto; grid-template-areas: "dash" "stats" "controls";
-}
-.dash { grid-area: dash; align-self: center; } .stats { grid-area: stats; } .controls { grid-area: controls; }
-@media (min-width: 700px) and (orientation: landscape) {
-  .layout {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-    grid-template-rows: 1fr 1fr; grid-template-areas: "dash stats" "dash controls";
-  }
-  .stats { align-self: end; } .controls { align-self: start; }
-}
-
-/* gauge */
-.dash { display: grid; justify-items: center; }
+.gbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.stage { flex: 1; min-height: 0; display: grid; place-items: center; }
 .gauge {
   position: relative;
   container-type: inline-size;
-  width: min(100%, 460px, calc((100vh - 170px) * 320 / 300));
+  width: min(100%, 460px, calc((100vh - 300px) * 320 / 300));
   aspect-ratio: 320 / 300;
+  margin: 0 auto;
   cursor: pointer;
-}
-@media (min-width: 700px) and (orientation: landscape) {
-  .gauge { width: min(100%, 460px, calc((100vh - 100px) * 320 / 300)); }
 }
 .gauge svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .track { fill: none; stroke: url(#gBand); stroke-width: 56; }
 .prog { fill: none; stroke: url(#gFill); stroke-width: 56; }
 .rimtrack { fill: none; stroke: var(--rim); stroke-opacity: 0.4; stroke-width: 1.5; }
-.rim { fill: none; stroke: var(--ink); stroke-width: 2; }
+.rim { fill: none; stroke: #fff; stroke-width: 2; }
 .ringbottom { fill: none; stroke: var(--line); stroke-width: 2; opacity: 0.8; }
-.gloss { fill: none; stroke: var(--ink); stroke-opacity: 0.2; stroke-width: 3; stroke-linecap: round; filter: blur(1.2px); }
-.tick { stroke: var(--bg); stroke-width: 1.6; }
-.endlabel { fill: var(--ink); font: 700 17px var(--body); text-anchor: middle; dominant-baseline: central; }
-.needle { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.6)); }
+.gloss { fill: none; stroke: #fff; stroke-opacity: 0.2; stroke-width: 3; stroke-linecap: round; filter: blur(1.2px); }
+.tick { stroke: #000; stroke-width: 1.6; }
+.endlabel { fill: #fff; font: 700 17px var(--body); text-anchor: middle; dominant-baseline: central; }
+.needle { stroke: #fff; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.6)); }
 
 .unit, .speed, .trip { position: absolute; left: 50%; transform: translate(-50%, -50%); white-space: nowrap; text-align: center; pointer-events: none; }
-.unit { top: 30%; font-size: 1.15rem; font-size: clamp(0.8rem, 5cqw, 1.2rem); font-weight: 600; color: var(--ink); line-height: 1.2; }
+.unit { top: 30%; font-size: 1.15rem; font-size: clamp(0.8rem, 5cqw, 1.2rem); font-weight: 500; line-height: 1.2; }
 .speed {
   top: 53.3%;
-  font-weight: 700;
+  font-weight: 600;
   font-size: clamp(3.5rem, 20vw, 7rem);
   font-size: 21cqw;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
-  color: var(--ink);
 }
-.trip { top: 93.5%; color: var(--muted); font-size: 1.1rem; font-size: clamp(0.85rem, 5cqw, 1.25rem); font-weight: 500; font-variant-numeric: tabular-nums; }
+.trip { top: 93.5%; color: var(--muted); font-size: 1.1rem; font-size: clamp(0.85rem, 5cqw, 1.25rem); font-weight: 400; font-variant-numeric: tabular-nums; }
 body[data-zone="warn"] .speed { color: var(--warn); }
 body[data-zone="over"] .speed { color: var(--over); }
 @media (prefers-reduced-motion: no-preference) {
   body[data-zone="over"] .speed { animation: pulse 0.5s ease-in-out infinite alternate; }
 }
 @keyframes pulse { from { opacity: 1; } to { opacity: 0.55; } }
-
-.flash {
-  position: fixed; inset: 0; pointer-events: none; z-index: 5;
-  border: 6px solid var(--over); opacity: 0; transition: opacity 0.15s;
-}
+.flash { position: fixed; inset: 0; pointer-events: none; z-index: 5; border: 6px solid var(--over); opacity: 0; transition: opacity 0.15s; }
 body[data-zone="over"] .flash { opacity: 1; }
 
-/* average / max */
-.stats { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; text-align: center; padding-top: 8px; }
+.stats4 { flex: none; margin: 0; padding: 4px 16px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 8px; text-align: center; }
 .stat { display: grid; gap: 0; min-width: 0; }
-.stat dt { color: var(--muted); font-size: 0.95rem; font-weight: 700; line-height: 1.4; letter-spacing: 0.02em; }
-.stat dd { margin: 0; font-size: 1.45rem; font-weight: 500; line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat dt { color: var(--muted); font-size: 0.95rem; font-weight: 600; line-height: 1.4; letter-spacing: 0.02em; }
+.stat dd { margin: 0; font-size: 1.4rem; font-weight: 400; line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* status (GPS starts by itself, so there is no start / stop button) */
-.controls { display: grid; gap: 10px; }
-.status { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.88rem; }
-#statusText { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
-.status[data-kind="search"] .dot { background: var(--warn); }
-.status[data-kind="live"] .dot { background: #25d3b5; }
-.status[data-kind="err"] .dot { background: var(--over); }
-.time { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.gps { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; white-space: nowrap; }
-.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; }
-.bars i { width: 4px; border-radius: 1px; background: var(--line); }
-.bars i:nth-child(1) { height: 5px; }
-.bars i:nth-child(2) { height: 8px; }
-.bars i:nth-child(3) { height: 12px; }
-.bars i:nth-child(4) { height: 16px; }
-.bars i.on { background: #25d3b5; }
-.bars.lv1 i.on { background: var(--over); }
-.bars.lv2 i.on { background: var(--warn); }
+@media (orientation: landscape) and (max-height: 520px) {
+  .gbody { display: grid; grid-template-columns: 1.15fr 1fr; align-items: center; }
+  .gauge { width: min(100%, 460px, calc((100vh - 130px) * 320 / 300)); }
+  .stats4 { padding-bottom: 0; }
+}
 
+/* ---------- Acceleration ---------- */
+.acc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-evenly; align-items: center; text-align: center; padding: 8px 16px; }
+.acc-label { color: var(--muted); font-size: 1.1rem; letter-spacing: 0.02em; }
+.acc-big { font-size: clamp(4.5rem, 26vw, 8.5rem); font-size: min(26vw, 22vh, 8.5rem); font-weight: 300; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.acc-foot { display: grid; justify-items: center; gap: 6px; }
+.acc-hint { margin: 0; min-height: 1.5em; color: var(--muted); font-size: 0.95rem; }
+.acc-hint[data-ready="1"] { color: #30d158; font-weight: 600; }
+.link-btn { color: var(--tint); font-size: 2rem; font-weight: 400; min-height: 56px; padding: 0 24px; }
+.link-btn.small { font-size: 1.05rem; min-height: 40px; }
+.results { flex: none; list-style: none; margin: 0; padding: 0; }
+.results li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; margin-left: 16px; padding-right: 16px; border-bottom: 1px solid var(--line); }
+.results .lbl { color: #b8b8be; font-size: 1.15rem; }
+.results .val { margin-left: auto; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.results .share { width: 40px; height: 40px; display: grid; place-items: center; color: var(--tint); }
+.results .share svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.link-btn.center { align-self: center; font-size: 1.3rem; margin-top: 10px; }
+
+/* ---------- Limit ---------- */
+.limit-body { flex: 1; min-height: 0; display: grid; grid-template-rows: auto 1fr auto; justify-items: center; align-items: center; padding: 28px 16px 20px; text-align: center; }
+.limit-body.hud { transform: scaleX(-1); }
+.sign {
+  position: relative; container-type: inline-size; width: min(48vw, 190px, 24vh); aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 57%, #e60000 58% 92%, #fff 93% 100%);
+}
+.sign span { position: absolute; inset: 0; display: grid; place-items: center; color: #000; font-size: 36cqw; font-weight: 700; letter-spacing: -0.02em; }
+.sign[data-digits="3"] span { font-size: 29cqw; }
+.lim-speed { display: grid; justify-items: center; }
+.lim-num { font-size: clamp(6rem, 34vw, 12rem); font-size: min(34vw, 26vh, 12rem); font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; }
+.lim-unit { color: #a3a3a8; font-size: 2rem; font-weight: 300; }
+body[data-tab="limit"][data-over="1"] .lim-unit { color: #c9a0a0; }
+.lim-foot { margin: 0; font-size: 1.15rem; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .limit-body { grid-template-rows: none; grid-template-columns: auto 1fr; grid-template-areas: "sign num" "foot foot"; gap: 8px 24px; padding-top: 8px; }
+  .sign { grid-area: sign; width: min(30vw, 150px, 40vh); }
+  .lim-speed { grid-area: num; }
+  .lim-num { font-size: min(26vw, 36vh, 9rem); }
+  .lim-foot { grid-area: foot; }
+}
+
+/* ---------- More ---------- */
+.more-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 24px; }
+.group { margin: 18px 0 8px; color: var(--muted); font-size: 0.85rem; font-weight: 600; letter-spacing: 0.04em; }
+.swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.swatch { display: grid; justify-items: center; gap: 6px; color: var(--muted); font-size: 0.8rem; }
+.swatch i { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; box-shadow: 0 0 0 1px var(--line); }
+.swatch[aria-pressed="true"] { color: #fff; }
+.swatch[aria-pressed="true"] i { border-color: #000; box-shadow: 0 0 0 3px #fff; }
+.about { margin: 0; padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: #c7c7cc; font-size: 0.9rem; line-height: 1.6; }
+.about + .about { margin-top: 10px; }
+
+/* ---------- messages above the tab bar ---------- */
 .notice {
-  margin: 0; padding: 12px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.5;
+  flex: none; margin: 0 12px 8px; padding: 12px 14px; border-radius: 12px; font-size: 0.9rem; line-height: 1.5;
   background: var(--panel); border: 1px solid var(--line);
 }
 .notice[data-kind="err"] { border-color: var(--over); }
 .notice[data-kind="warn"] { border-color: var(--warn); }
 .notice button {
   display: block; margin-top: 10px; min-height: 44px; padding: 0 20px; border-radius: 999px;
-  border: 2px solid var(--accent); background: var(--accent); color: #fff; font-weight: 700; cursor: pointer;
+  border: 2px solid var(--accent); background: var(--accent); color: #fff; font-weight: 700;
 }
-.safety { margin: 0; color: var(--muted); font-size: 0.78rem; text-align: center; }
 </style>
 </head>
-<body>
+<body data-tab="gauges" data-over="0" data-zone="ok">
 <div class="flash" aria-hidden="true"></div>
 <div class="app">
-  <header class="top">
-    <button class="icon-btn" id="shareBtn" type="button" aria-label="แชร์สรุปทริป">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M7 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>
-    </button>
-    <span class="toast" id="toast" role="status" aria-live="polite" hidden></span>
-    <button class="text-btn" id="resetBtn" type="button">Reset</button>
-  </header>
 
-  <main class="layout">
-    <section class="dash" aria-label="ความเร็วปัจจุบัน">
-      <div class="gauge" id="gauge">
-        <svg viewBox="0 0 320 300" role="button" tabindex="0" aria-label="วงความเร็ว 0 ถึง 240 กิโลเมตรต่อชั่วโมง แตะเพื่อเปลี่ยนสี">
-          <defs>
-            <!-- brightness across the band: transparent at the inner edge (r=84) up to bright at the outer edge (r=140);
-                 all colors come from the CSS variables so the palette can be swapped at run time -->
-            <radialGradient id="gBand" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="140">
-              <stop offset="0.6" style="stop-color:var(--bi0)" stop-opacity="0"/>
-              <stop offset="0.68" style="stop-color:var(--bi1)" stop-opacity="0.7"/>
-              <stop offset="0.82" style="stop-color:var(--b2)"/>
-              <stop offset="0.93" style="stop-color:var(--b3)"/>
-              <stop offset="1" style="stop-color:var(--b4)"/>
-            </radialGradient>
-            <radialGradient id="gFill" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="140">
-              <stop offset="0.6" style="stop-color:var(--fi0)" stop-opacity="0"/>
-              <stop offset="0.68" style="stop-color:var(--fi1)" stop-opacity="0.75"/>
-              <stop offset="0.8" style="stop-color:var(--f2)"/>
-              <stop offset="0.9" style="stop-color:var(--f3)"/>
-              <stop offset="0.96" style="stop-color:var(--f4)"/>
-              <stop offset="1" style="stop-color:var(--f5)"/>
-            </radialGradient>
-            <radialGradient id="gGlow" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="90">
-              <stop offset="0" style="stop-color:var(--glow)"/>
-              <stop offset="1" style="stop-color:var(--glow);stop-opacity:0"/>
-            </radialGradient>
-          </defs>
-          <circle cx="160" cy="160" r="90" fill="url(#gGlow)"/>
-          <path id="track" class="track" d=""/>
-          <path id="prog" class="prog" d=""/>
-          <g id="ticks"></g>
-          <path id="rimTrack" class="rimtrack" d=""/>
-          <path id="rim" class="rim" d=""/>
-          <path id="ringBottom" class="ringbottom" d=""/>
-          <path id="gloss" class="gloss" d=""/>
-          <line id="needle" class="needle" x1="0" y1="0" x2="0" y2="0"/>
-        </svg>
-        <div class="unit">km/h</div>
-        <div class="speed" id="speed">--</div>
-        <div class="trip"><span id="dist">0.00</span> km</div>
-      </div>
-    </section>
-
-    <dl class="stats">
-      <div class="stat"><dt>AVG. SPEED</dt><dd><span id="avg">0</span> km/h</dd></div>
-      <div class="stat"><dt>MAX. SPEED</dt><dd><span id="max">0</span> km/h</dd></div>
-    </dl>
-
-    <div class="controls">
-      <p class="notice" id="notice" role="alert" hidden><span id="noticeText"></span><button id="retryBtn" type="button" hidden>ลองอีกครั้ง</button></p>
-      <p class="status" id="status" data-kind="idle" role="status">
-        <span class="dot"></span><span id="statusText">กำลังเริ่ม…</span>
-        <span class="time" id="time">0:00:00</span>
-        <span class="gps" title="ความแม่นยำของสัญญาณ GPS">
+  <!-- ===== Gauges ===== -->
+  <section class="screen" id="s-gauges">
+    <header class="top">
+      <button class="icon-btn" id="shareBtn" type="button" aria-label="Share trip">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M7 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>
+      </button>
+      <div class="topmid" id="topmid">
+        <span class="gpsline" id="gpsline" title="GPS accuracy">
           <span class="bars" id="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-          <span id="gpsText">GPS</span>
+          <span id="gpsText">GPS off</span>
         </span>
-      </p>
-      <p class="safety">ไม่ควรมองหน้าจอขณะขับขี่</p>
+        <span class="toast" id="toast" role="status" aria-live="polite" hidden></span>
+      </div>
+      <button class="text-btn" id="resetBtn" type="button">Reset</button>
+    </header>
+    <div class="gbody">
+      <div class="stage">
+        <div class="gauge" id="gauge">
+          <svg viewBox="0 0 320 300" role="button" tabindex="0" aria-label="Speed gauge 0 to 240 km/h. Tap to change color">
+            <defs>
+              <!-- brightness across the band: transparent at the inner edge (r=84) up to bright at the outer edge (r=140);
+                   all colors come from the CSS variables so the palette can be swapped at run time -->
+              <radialGradient id="gBand" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="140">
+                <stop offset="0.6" style="stop-color:var(--bi0)" stop-opacity="0"/>
+                <stop offset="0.68" style="stop-color:var(--bi1)" stop-opacity="0.7"/>
+                <stop offset="0.82" style="stop-color:var(--b2)"/>
+                <stop offset="0.93" style="stop-color:var(--b3)"/>
+                <stop offset="1" style="stop-color:var(--b4)"/>
+              </radialGradient>
+              <radialGradient id="gFill" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="140">
+                <stop offset="0.6" style="stop-color:var(--fi0)" stop-opacity="0"/>
+                <stop offset="0.68" style="stop-color:var(--fi1)" stop-opacity="0.75"/>
+                <stop offset="0.8" style="stop-color:var(--f2)"/>
+                <stop offset="0.9" style="stop-color:var(--f3)"/>
+                <stop offset="0.96" style="stop-color:var(--f4)"/>
+                <stop offset="1" style="stop-color:var(--f5)"/>
+              </radialGradient>
+              <radialGradient id="gGlow" gradientUnits="userSpaceOnUse" cx="160" cy="160" r="90">
+                <stop offset="0" style="stop-color:var(--glow)"/>
+                <stop offset="1" style="stop-color:var(--glow);stop-opacity:0"/>
+              </radialGradient>
+            </defs>
+            <circle cx="160" cy="160" r="90" fill="url(#gGlow)"/>
+            <path id="track" class="track" d=""/>
+            <path id="prog" class="prog" d=""/>
+            <g id="ticks"></g>
+            <path id="rimTrack" class="rimtrack" d=""/>
+            <path id="rim" class="rim" d=""/>
+            <path id="ringBottom" class="ringbottom" d=""/>
+            <path id="gloss" class="gloss" d=""/>
+            <line id="needle" class="needle" x1="0" y1="0" x2="0" y2="0"/>
+          </svg>
+          <div class="unit">km/h</div>
+          <div class="speed" id="speed">--</div>
+          <div class="trip"><span id="dist">0.00</span> km</div>
+        </div>
+      </div>
+      <dl class="stats4">
+        <div class="stat"><dt>AVG. SPEED</dt><dd><span id="avg">0</span> km/h</dd></div>
+        <div class="stat"><dt>MAX. SPEED</dt><dd><span id="max">0</span> km/h</dd></div>
+        <div class="stat"><dt>TIME</dt><dd id="tMove">00:00</dd></div>
+        <div class="stat"><dt>STOP TIME</dt><dd id="tStop">00:00</dd></div>
+      </dl>
     </div>
-  </main>
+  </section>
+
+  <!-- ===== Acceleration ===== -->
+  <section class="screen" id="s-accel" hidden>
+    <div class="view" id="accMain">
+      <header class="nav"><span></span><span class="title">Acceleration</span><button class="nav-btn" id="accReset" type="button">Reset</button></header>
+      <div class="acc-body">
+        <div><div class="acc-label">TIME (SEC)</div><div class="acc-big" id="accTime">0.0</div></div>
+        <div><div class="acc-label">SPEED (KM/H)</div><div class="acc-big" id="accSpeed">0</div></div>
+        <div class="acc-foot">
+          <p class="acc-hint" id="accHint"></p>
+          <button class="link-btn" id="accBtn" type="button">Start</button>
+          <button class="link-btn small" id="accLast" type="button" hidden>Last results</button>
+        </div>
+      </div>
+    </div>
+    <div class="view" id="accRes" hidden>
+      <header class="nav">
+        <button class="nav-btn" id="resBack" type="button"><svg viewBox="0 0 12 20" aria-hidden="true"><path d="M10 2L2 10l8 8"/></svg>&nbsp;Acceleration</button>
+        <span class="title">Speed results</span><span></span>
+      </header>
+      <ul class="results" id="resList"></ul>
+      <button class="link-btn center" id="resAgain" type="button">Start again</button>
+    </div>
+  </section>
+
+  <!-- ===== Limit ===== -->
+  <section class="screen" id="s-limit" hidden>
+    <header class="nav plain">
+      <button class="nav-btn" id="hudBtn" type="button" aria-pressed="false">HUD</button>
+      <span class="title">Limit</span>
+      <button class="nav-btn" id="modeBtn" type="button">Mode</button>
+    </header>
+    <div class="limit-body" id="limitBody">
+      <button class="sign" id="sign" type="button" aria-label="Speed limit" data-digits="2"><span id="signNum">60</span></button>
+      <div class="lim-speed"><div class="lim-num" id="limNum">--</div><div class="lim-unit">km/h</div></div>
+      <p class="lim-foot" id="limFoot">Limit: 60 km/h (city)</p>
+    </div>
+  </section>
+
+  <!-- ===== More ===== -->
+  <section class="screen" id="s-more" hidden>
+    <header class="nav"><span></span><span class="title">More</span><span></span></header>
+    <div class="more-body">
+      <h3 class="group">GAUGE COLOR</h3>
+      <div class="swatches" id="swatches"></div>
+      <h3 class="group">ABOUT</h3>
+      <p class="about">GPS จะทำงานเฉพาะตอนเปิดแอปอยู่หน้าจอ เมื่อออกจากแอปจะหยุดจับ และเริ่มต่อเองเมื่อกลับเข้ามา ค่าทริป (ระยะทาง ความเร็วเฉลี่ย/สูงสุด เวลา) จะอยู่จนกว่าจะปิดแอปหรือกด Reset</p>
+      <p class="about">เวลาเร่ง (Acceleration) คำนวณจากความเร็ว GPS ที่อัปเดตประมาณวินาทีละครั้ง และประมาณค่าระหว่างจุด จึงคลาดเคลื่อนได้ราว 0.1–0.3 วินาที ควรทดสอบบนถนนปิดหรือพื้นที่ปลอดภัย</p>
+      <p class="about">ตั้งมือถือให้นิ่งก่อนออกตัว และไม่ควรมองหน้าจอขณะขับขี่ ความเร็วจาก GPS อาจต่างจากเข็มไมล์ของรถเล็กน้อย</p>
+    </div>
+  </section>
+
+  <p class="notice" id="notice" role="alert" hidden><span id="noticeText"></span><button id="retryBtn" type="button" hidden>ลองอีกครั้ง</button></p>
+
+  <nav class="tabbar" role="tablist" aria-label="Screens">
+    <button class="tab" role="tab" data-tab="gauges" aria-selected="true" type="button">
+      <svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="11"/><path d="M14 4.5v2M4.5 14h2M21.5 14h2M7.3 7.3l1.4 1.4M20.7 7.3l-1.4 1.4"/><path d="M14 14l4.6-4.6"/><circle cx="14" cy="14" r="1.8" fill="currentColor" stroke="none"/></svg>
+      <span>Gauges</span>
+    </button>
+    <button class="tab" role="tab" data-tab="accel" aria-selected="false" type="button">
+      <svg viewBox="0 0 28 28" aria-hidden="true"><path d="M2.25 16.73A12.5 12.5 0 0 1 25.75 16.73L21.99 18.09A8.5 8.5 0 0 0 6.01 18.09Z" fill="currentColor" stroke="none"/><path d="M14 22l3.6-6.2"/><circle cx="14" cy="22" r="1.6" fill="currentColor" stroke="none"/></svg>
+      <span>Acceleration</span>
+    </button>
+    <button class="tab" role="tab" data-tab="limit" aria-selected="false" type="button">
+      <svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="11.5" stroke-width="2.4"/><text x="14" y="18.3" text-anchor="middle" font-size="12" font-weight="700" fill="currentColor" stroke="none" font-family="system-ui, sans-serif">60</text></svg>
+      <span>Limit</span>
+    </button>
+    <button class="tab" role="tab" data-tab="more" aria-selected="false" type="button">
+      <svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="5.5" cy="14" r="2.6" fill="currentColor" stroke="none"/><circle cx="14" cy="14" r="2.6" fill="currentColor" stroke="none"/><circle cx="22.5" cy="14" r="2.6" fill="currentColor" stroke="none"/></svg>
+      <span>More</span>
+    </button>
+  </nav>
 </div>
 <noscript>ต้องเปิดใช้งาน JavaScript เพื่อใช้แอปนี้</noscript>
 
@@ -328,23 +449,32 @@ body[data-zone="over"] .flash { opacity: 1; }
   }
   // ==ENGINE-END==
 
-  // Speed limit: fixed. Above it the number turns red, the screen edge flashes, and the phone beeps / vibrates.
+  // Gauges / Acceleration screens: above this speed the number turns red, the screen edge flashes, the phone beeps.
   const LIMIT = 200;
+
+  // Limit screen presets. "custom" is changed by tapping the sign (+10 km/h, wraps from 200 back to 20).
+  const LIMIT_MODES = [
+    { name: 'city', v: 60 }, { name: 'rural', v: 90 }, { name: 'highway', v: 120 }, { name: 'custom', v: null }
+  ];
 
   // Gauge palette. h = hue of the band, k = how far the hue drifts toward the bright rim of the filled part.
   const COLORS = [
-    { name: 'แดง',     h: 355, k: 40 },
-    { name: 'ส้ม',     h: 24,  k: 26 },
-    { name: 'เหลือง',  h: 46,  k: 12 },
-    { name: 'เขียว',   h: 145, k: 32 },
-    { name: 'ฟ้า',     h: 192, k: -26 },
-    { name: 'น้ำเงิน', h: 222, k: -36 },
-    { name: 'ม่วง',    h: 275, k: 36 },
-    { name: 'ชมพู',    h: 325, k: -30 }
+    { name: 'Red',    h: 355, k: 40 },
+    { name: 'Orange', h: 24,  k: 26 },
+    { name: 'Yellow', h: 46,  k: 12 },
+    { name: 'Green',  h: 145, k: 32 },
+    { name: 'Cyan',   h: 192, k: -26 },
+    { name: 'Blue',   h: 222, k: -36 },
+    { name: 'Purple', h: 275, k: 36 },
+    { name: 'Pink',   h: 325, k: -30 }
   ];
 
+  // Acceleration measurements. Speed levels (km/h) whose crossing time is recorded, plus 1/4 and 1/8 mile.
+  const MPH60 = 60 * 1.609344;
+  const LEVELS = [30, 50, 60, 70, MPH60, 100, 150];
+  const QUARTER = 402.336, EIGHTH = 201.168;
+
   // ---------- gauge geometry (one scale for band, ticks, labels and needle) ----------
-  // The band is a thick stroke along radius RM (inner edge RIN, outer edge ROUT); RR is the thin rim outside it.
   const CX = 160, CY = 160, RM = 112, RIN = 84, ROUT = 140, RR = 141.5, A0 = 135, SWEEP = 270;
   const ang = v => A0 + SWEEP * Math.min(Math.max(v, 0), VMAX) / VMAX;
   const pt = (a, r) => [CX + r * Math.cos(a * Math.PI / 180), CY + r * Math.sin(a * Math.PI / 180)];
@@ -365,32 +495,67 @@ body[data-zone="over"] .flash { opacity: 1; }
   const el = {
     speed: $('speed'), prog: $('prog'), track: $('track'), rim: $('rim'), rimTrack: $('rimTrack'),
     ringBottom: $('ringBottom'), gloss: $('gloss'), ticks: $('ticks'), needle: $('needle'), gauge: $('gauge'),
-    status: $('status'), statusText: $('statusText'), notice: $('notice'), toast: $('toast'),
-    max: $('max'), avg: $('avg'), dist: $('dist'), time: $('time'),
-    reset: $('resetBtn'), retry: $('retryBtn'), noticeText: $('noticeText'), bars: $('bars'), gpsText: $('gpsText'),
-    share: $('shareBtn')
+    notice: $('notice'), noticeText: $('noticeText'), retry: $('retryBtn'), toast: $('toast'), topmid: $('topmid'),
+    max: $('max'), avg: $('avg'), dist: $('dist'), tMove: $('tMove'), tStop: $('tStop'),
+    reset: $('resetBtn'), share: $('shareBtn'), bars: $('bars'), gpsText: $('gpsText'),
+    accTime: $('accTime'), accSpeed: $('accSpeed'), accHint: $('accHint'), accBtn: $('accBtn'), accLast: $('accLast'),
+    accReset: $('accReset'), accMain: $('accMain'), accRes: $('accRes'), resList: $('resList'),
+    resBack: $('resBack'), resAgain: $('resAgain'),
+    limNum: $('limNum'), limFoot: $('limFoot'), sign: $('sign'), signNum: $('signNum'),
+    hud: $('hudBtn'), mode: $('modeBtn'), limitBody: $('limitBody'), swatches: $('swatches')
   };
+  const screens = { gauges: $('s-gauges'), accel: $('s-accel'), limit: $('s-limit'), more: $('s-more') };
+  const tabBtns = Array.prototype.slice.call(document.querySelectorAll('.tab'));
 
   // Simulation (testing at home, no GPS): open the page with ?sim in a browser. Not available inside the app.
   const SIM = /[?&]sim(&|=|$)/.test(location.search);
 
-  // ---------- preferences: only the gauge color is remembered ----------
+  // ---------- preferences ----------
   const PREF_KEY = 'moto-gps-prefs-v1';
-  const prefs = { color: 0, hinted: false };
+  const prefs = { color: 0, hinted: false, limitMode: 0, customLimit: 100, hud: false };
   try {
     const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
     if (Number.isInteger(saved.color) && saved.color >= 0 && saved.color < COLORS.length) prefs.color = saved.color;
+    if (Number.isInteger(saved.limitMode) && saved.limitMode >= 0 && saved.limitMode < LIMIT_MODES.length) prefs.limitMode = saved.limitMode;
+    if (Number.isInteger(saved.customLimit) && saved.customLimit >= 20 && saved.customLimit <= 200) prefs.customLimit = saved.customLimit;
     prefs.hinted = saved.hinted === true;
+    prefs.hud = saved.hud === true;
   } catch (e) { /* ignore */ }
   function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
 
   // ---------- run state ----------
   let trip = createTrip();
   let running = false, hasFix = false, watchId = null, simTimer = null;
-  let elapsed = 0, tickAt = 0, lastBeep = 0, audioCtx = null, wakeLock = null, noticeKind = null, toastTimer = null;
+  let elapsed = 0, tMove = 0, tStop = 0, tickAt = 0, lastBeep = 0;
+  let audioCtx = null, wakeLock = null, noticeKind = null, toastTimer = null;
+  let tab = 'gauges', prevFix = null, lastRaw = null;
+
+  // ---------- helpers ----------
+  const pad2 = n => String(n).padStart(2, '0');
+  function fmtClock(sec) {                       // 08:00 under an hour, 01:30:00 from one hour
+    const s = Math.max(0, Math.floor(sec));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return h > 0 ? pad2(h) + ':' + pad2(m) + ':' + pad2(x) : pad2(m) + ':' + pad2(x);
+  }
+  const hsl = (h, s, l) => 'hsl(' + (((h % 360) + 360) % 360) + ', ' + s + '%, ' + l + '%)';
+  const SHARE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M7 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>';
+
+  async function shareText(text) {
+    try {
+      if (window.AndroidBridge && window.AndroidBridge.share) { window.AndroidBridge.share(text); return; }
+      if (navigator.share) { await navigator.share({ text: text }); return; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        flashNotice('คัดลอกแล้ว');
+        return;
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+    }
+    flashNotice('แชร์ไม่ได้บนเครื่องนี้');
+  }
 
   // ---------- gauge color ----------
-  const hsl = (h, s, l) => 'hsl(' + (((h % 360) + 360) % 360) + ', ' + s + '%, ' + l + '%)';
   function applyColor(i) {
     const c = COLORS[i], h = c.h, k = c.k, set = (n, v) => document.documentElement.style.setProperty(n, v);
     set('--bi0', hsl(h, 80, 20));        set('--bi1', hsl(h, 80, 24));
@@ -400,19 +565,21 @@ body[data-zone="over"] .flash { opacity: 1; }
     set('--f4', hsl(h + k * 0.65, 100, 62)); set('--f5', hsl(h + k, 100, 71));
     set('--glow', 'hsla(' + (((h % 360) + 360) % 360) + ', 100%, 28%, 0.75)');
     set('--rim', hsl(h, 100, 68));       set('--accent', hsl(h, 100, 59));
+    Array.prototype.forEach.call(el.swatches.children, (b, j) => b.setAttribute('aria-pressed', j === i ? 'true' : 'false'));
   }
   function showToast(text, ms) {
     el.toast.textContent = text;
     el.toast.hidden = false;
+    el.topmid.classList.add('toasting');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { el.toast.hidden = true; }, ms || 1600);
+    toastTimer = setTimeout(function () { el.toast.hidden = true; el.topmid.classList.remove('toasting'); }, ms || 1600);
   }
-  function nextColor() {
-    prefs.color = (prefs.color + 1) % COLORS.length;
+  function setColor(i, quiet) {
+    prefs.color = i;
     prefs.hinted = true;
     savePrefs();
-    applyColor(prefs.color);
-    showToast('สีวง: ' + COLORS[prefs.color].name);
+    applyColor(i);
+    if (!quiet) showToast('Color: ' + COLORS[i].name);
   }
 
   function drawStatic() {
@@ -421,8 +588,7 @@ body[data-zone="over"] .flash { opacity: 1; }
     el.ringBottom.setAttribute('d', arcPath(A0 + SWEEP, A0 + 360, RR));   // faint ring through the opening
     el.gloss.setAttribute('d', arcPath(72, 108, 137));
     const NS = 'http://www.w3.org/2000/svg';
-    // dividers every 20 km/h cut the band into segments
-    for (let v = 20; v < VMAX; v += 20) {
+    for (let v = 20; v < VMAX; v += 20) {                                   // dividers every 20 km/h
       const ln = document.createElementNS(NS, 'line');
       ln.setAttribute('class', 'tick');
       setLine(ln, ang(v), RIN - 1, ROUT + 1);
@@ -436,10 +602,33 @@ body[data-zone="over"] .flash { opacity: 1; }
       tx.textContent = String(e[0]);
       el.ticks.appendChild(tx);
     });
+    COLORS.forEach(function (c, i) {                                        // swatches on the More screen
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'swatch'; b.setAttribute('aria-pressed', 'false');
+      const dot = document.createElement('i'); dot.style.background = hsl(c.h, 100, 55);
+      const name = document.createElement('span'); name.textContent = c.name;
+      b.appendChild(dot); b.appendChild(name);
+      b.addEventListener('click', function () { setColor(i, true); });
+      el.swatches.appendChild(b);
+    });
   }
 
   function zoneOf(shown) {
     return shown > LIMIT ? 'over' : (shown >= LIMIT * 0.9 ? 'warn' : 'ok');
+  }
+
+  // ---------- Limit screen ----------
+  function limitValue() {
+    const m = LIMIT_MODES[prefs.limitMode];
+    return m.v == null ? prefs.customLimit : m.v;
+  }
+  function renderLimitStatic() {
+    const v = limitValue();
+    el.signNum.textContent = String(v);
+    el.sign.dataset.digits = String(String(v).length);
+    el.limFoot.textContent = 'Limit: ' + v + ' km/h (' + LIMIT_MODES[prefs.limitMode].name + ')';
+    el.hud.setAttribute('aria-pressed', prefs.hud ? 'true' : 'false');
+    el.limitBody.classList.toggle('hud', prefs.hud);
   }
 
   // ---------- alerts ----------
@@ -465,6 +654,119 @@ body[data-zone="over"] .flash { opacity: 1; }
     }
   }
 
+  // ---------- Acceleration ----------
+  // states: idle -> armed (wait for a standstill, then for the start) -> running -> done (results shown)
+  const accel = { state: 'idle', ready: false, run: null, results: null, prev: null };
+
+  function accelStart() {
+    accel.state = 'armed'; accel.ready = false; accel.run = null; accel.prev = null;
+    el.accTime.textContent = '0.0';
+    updateAccelUI();
+  }
+  function accelCancel() {
+    if (accel.state === 'armed' || accel.state === 'running') {
+      accel.state = 'idle'; accel.ready = false; accel.run = null;
+      el.accTime.textContent = '0.0';
+      updateAccelUI();
+    }
+  }
+  function beginRun(p1, p2) {
+    // the run starts when the speed crosses 1 km/h; interpolate between the two fixes for the exact moment
+    const span = p2.v - p1.v;
+    const f = span > 0 ? Math.min(1, Math.max(0, (1 - p1.v) / span)) : 1;
+    const t0 = p1.t + f * (p2.t - p1.t);
+    accel.run = { t0: t0, dist: 0, cross: {}, last: { t: t0, v: Math.min(1, p2.v) }, maxV: p2.v };
+    accel.state = 'running';
+    stepRun(p2);
+    updateAccelUI();
+  }
+  function stepRun(p2) {
+    const run = accel.run, p1 = run.last, dt = (p2.t - p1.t) / 1000;
+    if (dt <= 0) return;
+    const d1 = run.dist, d2 = d1 + (p1.v + p2.v) / 2 / 3.6 * dt;
+    LEVELS.forEach(function (L) {
+      if (run.cross[L] == null && p1.v < L && p2.v >= L) {
+        run.cross[L] = (p1.t + (L - p1.v) / (p2.v - p1.v) * (p2.t - p1.t) - run.t0) / 1000;
+      }
+    });
+    [['q', QUARTER], ['e', EIGHTH]].forEach(function (x) {
+      if (run.cross[x[0]] == null && d1 < x[1] && d2 >= x[1]) {
+        run.cross[x[0]] = (p1.t + (x[1] - d1) / (d2 - d1) * (p2.t - p1.t) - run.t0) / 1000;
+      }
+    });
+    run.dist = d2; run.last = p2; run.maxV = Math.max(run.maxV, p2.v);
+    const elapsedMs = p2.t - run.t0;
+    if ((p2.v < 2 && elapsedMs > 3000 && run.maxV >= 10) ||        // came to a stop after a run
+        elapsedMs > 180000 ||                                       // safety stop
+        (run.cross[150] != null && run.cross.q != null)) {          // everything measured
+      accelFinish();
+    }
+  }
+  function accelFeed(t, v, acc) {
+    const prev = accel.prev;
+    accel.prev = { t: t, v: v };
+    if (accel.state === 'armed') {
+      if (acc > 50) return;
+      if (v < 2) accel.ready = true;
+      else if (accel.ready && prev && t > prev.t) { beginRun(prev, { t: t, v: v }); return; }
+      updateAccelUI();
+    } else if (accel.state === 'running') {
+      if (acc > 50) return;
+      stepRun({ t: t, v: v });
+    }
+  }
+  function accelFinish() {
+    if (accel.state !== 'running') { accelCancel(); return; }
+    const c = accel.run.cross;
+    const between = (a, b) => (c[a] != null && c[b] != null) ? c[b] - c[a] : null;
+    accel.results = [
+      ['0-60 km/h', c[60]], ['0-100 km/h', c[100]], ['0-150 km/h', c[150]],
+      ['30-50 km/h', between(30, 50)], ['50-70 km/h', between(50, 70)],
+      ['0-60 miles/h', c[MPH60]], ['1/4 mile', c.q], ['1/8 mile', c.e]
+    ];
+    accel.state = 'done'; accel.run = null;
+    buildResults();
+    showResults(true);
+    updateAccelUI();
+  }
+  const fmtSec = x => x == null ? '—' : x.toFixed(1) + ' sec.';
+  function buildResults() {
+    el.resList.textContent = '';
+    (accel.results || []).forEach(function (r) {
+      const li = document.createElement('li');
+      const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = r[0];
+      const val = document.createElement('span'); val.className = 'val'; val.textContent = fmtSec(r[1]);
+      const sh = document.createElement('button'); sh.type = 'button'; sh.className = 'share';
+      sh.setAttribute('aria-label', 'Share ' + r[0]); sh.innerHTML = SHARE_SVG;     // static markup, no user data
+      sh.addEventListener('click', function () { shareText(r[0] + ': ' + fmtSec(r[1])); });
+      li.appendChild(lbl); li.appendChild(val); li.appendChild(sh);
+      el.resList.appendChild(li);
+    });
+  }
+  function showResults(on) {
+    el.accRes.hidden = !on;
+    el.accMain.hidden = on;
+  }
+  function updateAccelUI() {
+    const s = accel.state;
+    el.accBtn.textContent = (s === 'armed' || s === 'running') ? 'Stop' : 'Start';
+    let hint = 'Stand still, press Start, then accelerate';
+    let ready = false;
+    if (s === 'armed') {
+      if (!hasFix) hint = 'Waiting for GPS…';
+      else if (accel.ready) { hint = 'Ready — start accelerating'; ready = true; }
+      else hint = 'Come to a complete stop';
+    } else if (s === 'running') hint = '';
+    el.accHint.textContent = hint;
+    el.accHint.dataset.ready = ready ? '1' : '0';
+    el.accLast.hidden = !(accel.results && (s === 'idle' || s === 'done'));
+  }
+  function updateAccelLive() {
+    const v = hasFix ? Math.round(lastRaw != null ? lastRaw : trip.disp) : 0;
+    el.accSpeed.textContent = String(v);
+    if (accel.state === 'running' && accel.run) el.accTime.textContent = Math.max(0, (Date.now() - accel.run.t0) / 1000).toFixed(1);
+  }
+
   // ---------- rendering ----------
   function render() {
     const v = trip.disp;
@@ -474,24 +776,27 @@ body[data-zone="over"] .flash { opacity: 1; }
     el.prog.setAttribute('d', filled ? arcPath(A0, ang(v), RM) : '');
     el.rim.setAttribute('d', filled ? arcPath(A0, ang(v), RR) : '');
     setLine(el.needle, ang(hasFix ? v : 0), 96, ROUT + 2);
-    const zone = hasFix ? zoneOf(shown) : 'ok';
-    document.body.dataset.zone = zone;
     el.max.textContent = String(Math.round(trip.max));
     el.avg.textContent = String(Math.round(avgKmh(trip)));
     const km = trip.dist / 1000;
     el.dist.textContent = km < 10 ? km.toFixed(2) : km.toFixed(1);
-    el.time.textContent = fmtTime(elapsed);
-    alerts(zone);
+    el.tMove.textContent = fmtClock(tMove);
+    el.tStop.textContent = fmtClock(tStop);
+
+    el.limNum.textContent = hasFix ? String(shown) : '--';
+    const overLimit = hasFix && shown > limitValue();
+    const onLimit = tab === 'limit';
+    document.body.dataset.over = (onLimit && overLimit) ? '1' : '0';
+    const gz = hasFix ? zoneOf(shown) : 'ok';
+    document.body.dataset.zone = onLimit ? 'ok' : gz;      // red edge flash is for the other screens
+    alerts(onLimit ? (overLimit ? 'over' : 'ok') : gz);
+    updateAccelLive();
   }
 
-  function setStatus(kind, text) {
-    el.status.dataset.kind = kind;
-    el.statusText.textContent = text;
-  }
   function updateUI() {
-    if (running && !hasFix) setStatus('search', SIM ? 'โหมดจำลอง กำลังเริ่ม…' : 'กำลังค้นหาสัญญาณ GPS…');
-    else if (running) setStatus('live', SIM ? 'บันทึกทริป (จำลอง)' : 'กำลังบันทึกทริป');
-    else setStatus('idle', 'GPS หยุดอยู่ จะเริ่มเองเมื่อเปิดแอป');
+    if (!running) { el.bars.className = 'bars'; Array.prototype.forEach.call(el.bars.children, b => b.classList.remove('on')); el.gpsText.textContent = 'GPS off'; }
+    else if (!hasFix) { el.bars.className = 'bars'; Array.prototype.forEach.call(el.bars.children, b => b.classList.remove('on')); el.gpsText.textContent = SIM ? 'Simulation…' : 'Searching…'; }
+    updateAccelUI();
   }
   function showNotice(kind, text, canRetry) {
     noticeKind = kind;
@@ -510,11 +815,20 @@ body[data-zone="over"] .flash { opacity: 1; }
     const s = signalLevel(acc);
     el.bars.className = 'bars lv' + s.bars;
     Array.prototype.forEach.call(el.bars.children, (b, i) => b.classList.toggle('on', i < s.bars));
-    el.gpsText.textContent = '±' + Math.round(acc) + ' ม.';
-    el.gpsText.parentNode.title = 'ความแม่นยำของสัญญาณ GPS: ' + s.label;
+    el.gpsText.textContent = '±' + Math.round(acc) + ' m' + (SIM ? ' (sim)' : '');
+    el.gpsText.parentNode.title = 'GPS accuracy: ' + s.label;
   }
 
   // ---------- GPS input ----------
+  // raw speed for the acceleration timer: GPS Doppler speed when the phone gives it, else from the last two fixes
+  function rawSpeed(f) {
+    if (f.speed != null && isFinite(f.speed) && f.speed >= 0) return f.speed * 3.6;
+    if (prevFix && f.t > prevFix.t && f.t - prevFix.t <= 5000) {
+      const bd = haversine(prevFix.lat, prevFix.lon, f.lat, f.lon);
+      return bd < Math.max(3, f.acc * 0.8) ? 0 : bd / ((f.t - prevFix.t) / 1000) * 3.6;
+    }
+    return null;
+  }
   function handleFix(f) {
     setSignal(f.acc);
     if (f.acc <= 100) {
@@ -524,6 +838,11 @@ body[data-zone="over"] .flash { opacity: 1; }
       showNotice('warn', 'สัญญาณ GPS ยังไม่แม่นพอ (คลาดเคลื่อนเกิน 100 เมตร) ลองออกไปที่โล่ง');
     }
     processFix(trip, f);
+    if (f.acc <= 100) {
+      const rv = rawSpeed(f);
+      prevFix = f;
+      if (rv != null) { lastRaw = rv; accelFeed(f.t, rv, f.acc); }
+    }
     render();
   }
   function onPos(p) {
@@ -576,7 +895,7 @@ body[data-zone="over"] .flash { opacity: 1; }
       }
     }
     hideNotice();
-    running = true; hasFix = false; trip.last = null; trip.hist = [];
+    running = true; hasFix = false; trip.last = null; trip.hist = []; prevFix = null; lastRaw = null;
     tickAt = performance.now();
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -594,7 +913,8 @@ body[data-zone="over"] .flash { opacity: 1; }
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
     if (simTimer !== null) { clearInterval(simTimer); simTimer = null; }
     running = false; hasFix = false;
-    trip.disp = 0; trip.last = null; trip.hist = [];
+    trip.disp = 0; trip.last = null; trip.hist = []; prevFix = null; lastRaw = null;
+    accelCancel();                       // a run cut off by leaving the app would give wrong times
     releaseWake();
     updateUI();
     render();
@@ -602,7 +922,7 @@ body[data-zone="over"] .flash { opacity: 1; }
 
   function resetTrip() {
     trip = createTrip();
-    elapsed = 0; tickAt = performance.now();
+    elapsed = 0; tMove = 0; tStop = 0; tickAt = performance.now();
     if (!running) hasFix = false;
     updateUI();
     render();
@@ -620,55 +940,77 @@ body[data-zone="over"] .flash { opacity: 1; }
     else resumeGps();
   });
 
+  // one clock for trip time (moving / stopped) and the acceleration timer
   setInterval(() => {
     if (!running) return;
     const now = performance.now();
-    elapsed += (now - tickAt) / 1000;
+    const d = (now - tickAt) / 1000;
     tickAt = now;
-    el.time.textContent = fmtTime(elapsed);
-  }, 500);
+    elapsed += d;
+    if (hasFix) { if (trip.disp >= MOVE_KMH) tMove += d; else tStop += d; }
+    const a = fmtClock(tMove), b = fmtClock(tStop);
+    if (el.tMove.textContent !== a) el.tMove.textContent = a;
+    if (el.tStop.textContent !== b) el.tStop.textContent = b;
+    if (accel.state === 'running' && accel.run) el.accTime.textContent = Math.max(0, (Date.now() - accel.run.t0) / 1000).toFixed(1);
+  }, 100);
 
-  // ---------- share ----------
+  // ---------- trip summary ----------
   function tripSummary() {
     const km = trip.dist / 1000;
     return 'ไมล์ GPS\n' +
       'ระยะทาง ' + (km < 10 ? km.toFixed(2) : km.toFixed(1)) + ' กม.\n' +
-      'เวลา ' + fmtTime(elapsed) + '\n' +
+      'เวลาเดินทาง ' + fmtClock(tMove) + '\n' +
+      'เวลาจอด ' + fmtClock(tStop) + '\n' +
       'ความเร็วเฉลี่ย ' + Math.round(avgKmh(trip)) + ' กม./ชม.\n' +
       'ความเร็วสูงสุด ' + Math.round(trip.max) + ' กม./ชม.';
   }
-  async function shareTrip() {
-    const text = tripSummary();
-    try {
-      if (window.AndroidBridge && window.AndroidBridge.share) { window.AndroidBridge.share(text); return; }
-      if (navigator.share) { await navigator.share({ text: text }); return; }
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text);
-        flashNotice('คัดลอกสรุปทริปแล้ว');
-        return;
-      }
-    } catch (e) {
-      if (e && e.name === 'AbortError') return;
-    }
-    flashNotice('แชร์ไม่ได้บนเครื่องนี้');
+
+  // ---------- tabs ----------
+  function setTab(name) {
+    tab = name;
+    document.body.dataset.tab = name;
+    Object.keys(screens).forEach(k => { screens[k].hidden = (k !== name); });
+    tabBtns.forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false'));
+    if (name === 'accel') updateAccelUI();
+    render();
   }
 
   // ---------- controls ----------
+  tabBtns.forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
   el.retry.addEventListener('click', resumeGps);
   el.reset.addEventListener('click', resetTrip);
-  el.share.addEventListener('click', shareTrip);
-  el.gauge.addEventListener('click', nextColor);          // tap the gauge to change its color
+  el.share.addEventListener('click', () => shareText(tripSummary()));
+  el.gauge.addEventListener('click', () => setColor((prefs.color + 1) % COLORS.length));   // tap the gauge to change its color
   el.gauge.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nextColor(); }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setColor((prefs.color + 1) % COLORS.length); }
+  });
+
+  el.accBtn.addEventListener('click', () => {
+    if (accel.state === 'armed') accelCancel();
+    else if (accel.state === 'running') accelFinish();
+    else { showResults(false); accelStart(); }
+  });
+  el.accReset.addEventListener('click', () => { accelCancel(); accel.state = 'idle'; showResults(false); updateAccelUI(); });
+  el.accLast.addEventListener('click', () => { buildResults(); showResults(true); });
+  el.resBack.addEventListener('click', () => { if (accel.state === 'done') accel.state = 'idle'; showResults(false); updateAccelUI(); });
+  el.resAgain.addEventListener('click', () => { showResults(false); accelStart(); });
+
+  el.hud.addEventListener('click', () => { prefs.hud = !prefs.hud; savePrefs(); renderLimitStatic(); });
+  el.mode.addEventListener('click', () => { prefs.limitMode = (prefs.limitMode + 1) % LIMIT_MODES.length; savePrefs(); renderLimitStatic(); render(); });
+  el.sign.addEventListener('click', () => {
+    if (LIMIT_MODES[prefs.limitMode].name !== 'custom') return;
+    prefs.customLimit = prefs.customLimit >= 200 ? 20 : prefs.customLimit + 10;
+    savePrefs(); renderLimitStatic(); render();
   });
 
   // ---------- init ----------
   drawStatic();
   applyColor(prefs.color);
+  renderLimitStatic();
   updateUI();
   render();
-  if (!prefs.hinted) showToast('แตะที่วงเพื่อเปลี่ยนสี', 4000);   // one-time hint
-  if (document.visibilityState !== 'hidden') start();           // start right away, no button
+  if (!prefs.hinted) showToast('Tap the gauge to change color', 4000);   // one-time hint
+  if (document.visibilityState !== 'hidden') start();                  // start right away, no button
 })();
 </script>
 </body>
